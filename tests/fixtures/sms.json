@@ -1,0 +1,205 @@
+{
+ "name": "Mchango payment-SMS samples",
+ "version": 1,
+ "note": "Every sample is made up: test numbers 2557000009xx, demo names, invented transaction IDs and amounts. Only the structure, spacing and punctuation follow real messages. 'expect.ok' true = a payment coming in that the app may offer to record; false = the app must refuse it and say why.",
+ "samples": [
+  {
+   "id": "till_in_three_spaces_tight_salio",
+   "note": "three spaces before the time, and no space in '.Salio'",
+   "text": "QK7XM2PAR4 Imethibitishwa. Umelipwa Tsh100,000.00 kutoka kwa 255700000901 - ZAWADI TUMAINI AMANI mnamo 17/9/26   2:14 PM.Salio lako jipya ni Tsh369,101.00.",
+   "expect": {
+    "ok": true,
+    "shape": "mpesa_till_in",
+    "network": "mpesa",
+    "txId": "QK7XM2PAR4",
+    "amount": 100000,
+    "payerPhone": "255700000901",
+    "payerName": "ZAWADI TUMAINI AMANI",
+    "paidAt": "2026-09-17T14:14:00+03:00"
+   }
+  },
+  {
+   "id": "till_in_other_network_payer",
+   "note": "a payer on another network gives the same shape, with their own number",
+   "text": "QM3RD8XKT5 Imethibitishwa. Umelipwa Tsh500.00 kutoka kwa 255700000902 - FURAHA AMANI mnamo 30/9/26 6:16 PM. Salio lako jipya ni Tsh369,601.00.",
+   "expect": {
+    "ok": true,
+    "shape": "mpesa_till_in",
+    "network": "mpesa",
+    "txId": "QM3RD8XKT5",
+    "amount": 500,
+    "payerPhone": "255700000902",
+    "payerName": "FURAHA AMANI",
+    "paidAt": "2026-09-30T18:16:00+03:00"
+   }
+  },
+  {
+   "id": "till_in_many_spaces_tight_salio",
+   "note": "four spaces before the time, then '5:55 PM.Salio'",
+   "text": "TK9AB1CD2E Imethibitishwa. Umelipwa Tsh500.00 kutoka kwa 255700000903 - UPENDO FARAJA mnamo 9/11/26    5:55 PM.Salio lako jipya ni Tsh1,000.00.",
+   "expect": {
+    "ok": true,
+    "shape": "mpesa_till_in",
+    "network": "mpesa",
+    "txId": "TK9AB1CD2E",
+    "amount": 500,
+    "payerPhone": "255700000903",
+    "payerName": "UPENDO FARAJA",
+    "paidAt": "2026-11-09T17:55:00+03:00"
+   }
+  },
+  {
+   "id": "till_in_0130_first_of_month",
+   "note": "1:30 AM on 1/10/26 in East Africa Time is 1 October, not 30 September",
+   "text": "TL1MN2OP3Q Imethibitishwa. Umelipwa Tsh1,000.00 kutoka kwa 255700000904 - AMANI TUMAINI mnamo 1/10/26 1:30 AM. Salio lako jipya ni Tsh2,000.00.",
+   "expect": {
+    "ok": true,
+    "shape": "mpesa_till_in",
+    "network": "mpesa",
+    "txId": "TL1MN2OP3Q",
+    "amount": 1000,
+    "payerPhone": "255700000904",
+    "payerName": "AMANI TUMAINI",
+    "paidAt": "2026-10-01T01:30:00+03:00"
+   }
+  },
+  {
+   "id": "till_in_1215_am",
+   "note": "12:15 AM is a quarter past midnight",
+   "text": "TM2NO3PQ4R Imethibitishwa. Umelipwa Tsh1,000.00 kutoka kwa 255700000905 - FARAJA ZAWADI mnamo 2/10/26 12:15 AM. Salio lako jipya ni Tsh3,000.00.",
+   "expect": {
+    "ok": true,
+    "shape": "mpesa_till_in",
+    "network": "mpesa",
+    "txId": "TM2NO3PQ4R",
+    "amount": 1000,
+    "payerPhone": "255700000905",
+    "payerName": "FARAJA ZAWADI",
+    "paidAt": "2026-10-02T00:15:00+03:00"
+   }
+  },
+  {
+   "id": "till_in_1215_pm",
+   "note": "12:15 PM is a quarter past noon",
+   "text": "TN3OP4QR5S Imethibitishwa. Umelipwa Tsh1,000.00 kutoka kwa 255700000905 - FARAJA ZAWADI mnamo 2/10/26 12:15 PM. Salio lako jipya ni Tsh4,000.00.",
+   "expect": {
+    "ok": true,
+    "shape": "mpesa_till_in",
+    "network": "mpesa",
+    "txId": "TN3OP4QR5S",
+    "amount": 1000,
+    "payerPhone": "255700000905",
+    "payerName": "FARAJA ZAWADI",
+    "paidAt": "2026-10-02T12:15:00+03:00"
+   }
+  },
+  {
+   "id": "till_out_to_lipa",
+   "note": "money going OUT of a till to a business: never a contribution",
+   "text": "TP4QR5ST6U Imethibitishwa. Kiasi cha Tsh500.00 kimelipwa kwenda DUKA LA MFANO LTD mnamo 9/11/26 6:02 PM. Salio jipya la Merchant akaunti ni Tsh500.00.",
+   "expect": {
+    "ok": false,
+    "reason": "outgoing"
+   }
+  },
+  {
+   "id": "till_in_fraction_refused",
+   "note": "an amount with cents is refused, never rounded",
+   "text": "TQ5RS6TU7V Imethibitishwa. Umelipwa Tsh1,000.50 kutoka kwa 255700000906 - TUMAINI FURAHA mnamo 9/11/26 6:10 PM. Salio lako jipya ni Tsh1,500.50.",
+   "expect": {
+    "ok": false,
+    "reason": "fraction"
+   }
+  },
+  {
+   "id": "till_in_bad_date_refused",
+   "note": "31 February does not exist",
+   "text": "TR6ST7UV8W Imethibitishwa. Umelipwa Tsh1,000.00 kutoka kwa 255700000907 - ZAWADI UPENDO mnamo 31/2/26 6:10 PM. Salio lako jipya ni Tsh1,500.00.",
+   "expect": {
+    "ok": false,
+    "reason": "bad_date"
+   }
+  },
+  {
+   "id": "personal_received_umepokea",
+   "note": "a personal wallet receiving money, Kiswahili",
+   "text": "PA1BC2DE3F Imethibitishwa. Umepokea Tsh5,000.00 kutoka kwa 255700000908 - FURAHA ZAWADI mnamo 9/11/26 3:10 PM. Salio lako jipya la M-Pesa ni Tsh12,345.00.",
+   "expect": {
+    "ok": true,
+    "shape": "mpesa_personal_sw",
+    "network": "mpesa",
+    "txId": "PA1BC2DE3F",
+    "amount": 5000,
+    "payerPhone": "255700000908",
+    "payerName": "FURAHA ZAWADI",
+    "paidAt": "2026-11-09T15:10:00+03:00"
+   }
+  },
+  {
+   "id": "personal_lowercase_copy",
+   "note": "a personal copy starts with a lowercase 'imethibitishwa'",
+   "text": "PB2CD3EF4G imethibitishwa. Umelipwa Tsh1,000.00 kutoka kwa 255700000909 - AMANI UPENDO mnamo 9/11/26 4:00 PM. Salio lako jipya ni Tsh2,000.00.",
+   "expect": {
+    "ok": true,
+    "shape": "mpesa_personal_copy",
+    "network": "mpesa",
+    "txId": "PB2CD3EF4G",
+    "amount": 1000,
+    "payerPhone": "255700000909",
+    "payerName": "AMANI UPENDO",
+    "paidAt": "2026-11-09T16:00:00+03:00"
+   }
+  },
+  {
+   "id": "personal_english_received",
+   "note": "a personal wallet receiving money, English; no full stop before the balance sentence",
+   "text": "PC3DE4FG5H Confirmed. You have received Tsh2,000.00 from 255700000910 - TUMAINI FARAJA on 9/11/26 at 4:20 PM New M-Pesa balance is Tsh4,000.00.",
+   "expect": {
+    "ok": true,
+    "shape": "mpesa_personal_en",
+    "network": "mpesa",
+    "txId": "PC3DE4FG5H",
+    "amount": 2000,
+    "payerPhone": "255700000910",
+    "payerName": "TUMAINI FARAJA",
+    "paidAt": "2026-11-09T16:20:00+03:00"
+   }
+  },
+  {
+   "id": "personal_english_paid_to_lipa",
+   "note": "the payer's own copy of a payment to a business, English: money going out",
+   "text": "QB4TN9WLC2 Confirmed. Tsh5,000.00 paid to LIPA JINA LA MFANYABIASHARA on 11/6/26 at 5:13 pm and charged Tsh300.00.New M-Pesa balance is Tsh14,700.32.",
+   "expect": {
+    "ok": false,
+    "reason": "outgoing"
+   }
+  },
+  {
+   "id": "personal_swahili_paid_to_lipa",
+   "note": "a wallet paying a business, Kiswahili: money going out",
+   "text": "PD4EF5GH6J Imethibitishwa. Kiasi cha Tsh1,000.00 kimelipwa kwenda DUKA LA MFANO LTD mnamo 9/11/26 4:30 PM. Salio jipya la M-Pesa ni Tsh3,000.00.",
+   "expect": {
+    "ok": false,
+    "reason": "outgoing"
+   }
+  },
+  {
+   "id": "personal_loan_repayment",
+   "note": "an overdraft being repaid: not money coming in",
+   "text": "PE5FG6HI7K Imethibitishwa. Tsh1,000.00 imetumika kulipa deni la Songesha mnamo 9/11/26 4:40 PM. Salio lako jipya la M-Pesa ni Tsh0.00.",
+   "expect": {
+    "ok": false,
+    "reason": "loan"
+   }
+  },
+  {
+   "id": "not_a_payment_otp",
+   "note": "a one-time code is not a payment at all",
+   "text": "Namba yako ya uthibitisho ni 123456. Usimpe mtu yeyote.",
+   "expect": {
+    "ok": false,
+    "reason": "unknown"
+   }
+  }
+ ]
+}
