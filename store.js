@@ -2,6 +2,7 @@
 // saving on this phone (IndexedDB). Nothing here talks to a server.
 
 import { MAX_AMOUNT, MAX_NAME, eatIso, normPhone } from './parse.js?v=0.1.0';
+import { withNewIds } from './backup.js?v=0.1.0';
 
 // ---------- arithmetic (pure) ----------
 
@@ -333,4 +334,57 @@ export async function setUndone(paymentId, undone) {
   }
   await done(tx);
   return verdict;
+}
+
+// ---------- the copy (backup) ----------
+
+/** A copy was saved just now: the reminder starts counting again. */
+export async function markBackedUp(eventId, nowMs) {
+  const { tx, s } = await stores('readwrite', 'events');
+  const event = await ask(s.events.get(eventId));
+  if (!event) throw new Error('no-event');
+  event.lastBackupAt = eatIso(nowMs);
+  event.changesSinceBackup = 0;
+  s.events.put(event);
+  await done(tx);
+}
+
+/**
+ * Put a checked copy (see backup.js) on the phone, in ONE step: all of it or none of it.
+ *  mode 'new'     : the list is not on this phone yet
+ *  mode 'copy'    : it is; add the file beside it as a separate list (`rename` names it)
+ *  mode 'replace' : it is; first keep the list that is here under the name `keepAs`,
+ *                   then put the file in its place
+ * People and payments always get new IDs, so a file can never land on top of
+ * another list's records. Nothing is ever merged. Returns the ID of the opened list.
+ */
+export async function importList(data, mode, { rename = null, keepAs = null } = {}) {
+  const { tx, s } = await stores('readwrite', 'events', 'people', 'payments');
+  const here = await ask(s.events.get(data.event.id));
+  if (mode === 'new' && here) throw new Error('already-here');
+  if (mode === 'replace') {
+    if (!here || !keepAs) throw new Error('nothing-to-replace');
+    const [people, payments] = await Promise.all([
+      ask(s.people.index('eventId').getAll(here.id)),
+      ask(s.payments.index('eventId').getAll(here.id)),
+    ]);
+    const kept = withNewIds({ event: { ...here, name: keepAs }, people, payments }, uuid);
+    s.events.put(kept.event);
+    for (const p of kept.people) s.people.put(p);
+    for (const y of kept.payments) s.payments.put(y);
+    for (const p of people) s.people.delete(p.id);
+    for (const y of payments) s.payments.delete(y.id);
+  }
+  const fresh = withNewIds(data, uuid, mode !== 'copy');
+  // The file is the copy of this list: nothing has changed since it was saved.
+  s.events.put({
+    ...fresh.event,
+    name: mode === 'copy' && rename ? rename : fresh.event.name,
+    lastBackupAt: data.exportedAt,
+    changesSinceBackup: 0,
+  });
+  for (const p of fresh.people) s.people.put(p);
+  for (const y of fresh.payments) s.payments.put(y);
+  await done(tx);
+  return fresh.event.id;
 }
