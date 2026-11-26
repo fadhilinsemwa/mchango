@@ -72,3 +72,11 @@ test('the manifest opens the page from its own folder, with both icon sizes', ()
     assert.equal(`${png.readUInt32BE(16)}x${png.readUInt32BE(20)}`, icon.sizes); // the real size of the picture
   }
 });
+
+test('the offline worker is registered so that the browser always asks the server for it afresh', () => {
+  // The default (updateViaCache 'imports') makes the browser skip its cache for sw.js itself, so a cache
+  // lifetime put on sw.js by a server or a CDN cannot hold a new version back. 'all' would undo that.
+  const code = read('app.js');
+  assert.match(code, /sw\.register\('sw\.js'\)/);
+  assert.equal(/updateViaCache/.test(code), false);
+});

@@ -826,7 +826,15 @@ async function liveFiles(base) {
     }
     const cache = h.get('cache-control') ?? '';
     const fresh = ['./', 'index.html', 'sw.js'].includes(address) || address.startsWith('manifest.webmanifest');
-    if (fresh) assert.match(cache, /no-cache|max-age=0/, `${address} must be asked for afresh every time, got "${cache}"`);
+    // A CDN in front may put its own browser lifetime on a plain .js address (seen: sw.js got max-age=14400).
+    // For sw.js that delays nothing: a browser asks the server afresh for a service worker script whatever its
+    // cache lifetime, unless the page registers it with updateViaCache 'all' (tests/version.test.mjs forbids that),
+    // and the CDN itself must then be re-checking with the server (REVALIDATED / DYNAMIC / MISS / BYPASS / EXPIRED).
+    const cdn = h.get('cf-cache-status');
+    if (address === 'sw.js' && cdn && !/no-cache|max-age=0/.test(cache)) {
+      assert.match(cdn, /^(REVALIDATED|DYNAMIC|MISS|BYPASS|EXPIRED)$/, `sw.js is served from the CDN's own copy (${cdn})`);
+      console.log(`  note: the CDN sends sw.js with "${cache}" (${cdn}); browsers still ask afresh for a worker script`);
+    } else if (fresh) assert.match(cache, /no-cache|max-age=0/, `${address} must be asked for afresh every time, got "${cache}"`);
     else assert.match(cache, /max-age=31536000/, `${address} may be kept a year, got "${cache}"`);
     if (address.startsWith('manifest.webmanifest')) assert.match(h.get('content-type') ?? '', /application\/manifest\+json/);
     if (address.includes('.js')) assert.match(h.get('content-type') ?? '', /javascript/, address);
