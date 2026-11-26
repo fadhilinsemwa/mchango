@@ -242,7 +242,7 @@ async function wholeEvent(browser, base, width) {
 
   step('first visit: says what it does and that the list stays on the phone');
   const first = await tab.text();
-  assert.match(first, /Mchango ya tov/);
+  assert.match(first, /Mchango wa tov/);
   assert.match(first, /Orodha inakaa kwenye simu yako tu/);
   await checkScreen(tab, '1-first-visit');
 
@@ -875,7 +875,7 @@ async function movingAround(browser, base) {
 function nextVersion(dir) {
   cpSync(ROOT, dir, { recursive: true, filter: (src) => !/\/(\.git|node_modules|tests)(\/|$)/.test(src) });
   for (const name of readdirSync(dir).filter((n) => /\.(js|html|css|webmanifest)$/.test(n))) {
-    let text = readFileSync(join(dir, name), 'utf8').replaceAll('1.1.0', '1.1.1');
+    let text = readFileSync(join(dir, name), 'utf8').replaceAll('1.1.2', '1.1.3');
     if (name === 'parse.js') {
       const old = "if (OUTGOING.test(t)) return refuse('outgoing');";
       assert.equal(text.includes(old), true);
@@ -906,7 +906,7 @@ async function offlineAndUpdate(browser) {
   await tab.tap('Hifadhi');
   await tab.until(LIST);
   const eventHash = await tab.js('location.hash');
-  assert.equal(await tab.js('document.documentElement.dataset.version'), '1.1.0');
+  assert.equal(await tab.js('document.documentElement.dataset.version'), '1.1.2');
   assert.match(await outgoing(), /pesa iliyotoka/);
 
   step('version 2 is published: the page says so and waits for the tap, a form being filled is left alone');
@@ -915,17 +915,17 @@ async function offlineAndUpdate(browser) {
   await tab.js('navigator.serviceWorker.getRegistration().then((r) => r.update()).then(() => 1)');
   await tab.until("document.querySelector('.update')", 'the new-version notice');
   assert.match(await tab.js("document.querySelector('.sheet .update').textContent"), /Toleo jipya lipo/, 'the notice is not in the open panel, where it can be seen and tapped');
-  assert.equal(await tab.js('document.documentElement.dataset.version'), '1.1.0');
+  assert.equal(await tab.js('document.documentElement.dataset.version'), '1.1.2');
   assert.equal(await tab.js("document.querySelector('#who') !== null && [...document.querySelectorAll('input')].some((i) => i.value === '7,000')"), true, 'the notice wiped the form');
   await checkScreen(tab, '25-new-version');
 
   step('"Fungua upya": the new SMS reader runs, the list is still there, the old files are gone');
   await tab.tap('Fungua upya');
-  await tab.until("document.documentElement.dataset.version === '1.1.1' && document.querySelector('#app main')", 'the page reopened as version 2');
+  await tab.until("document.documentElement.dataset.version === '1.1.3' && document.querySelector('#app main')", 'the page reopened as version 2');
   assert.match(await outgoing(), /kulipa deni/);
   assert.equal(await tab.js("document.querySelector('.update')"), null);
   const kept = await tab.js('caches.keys()');
-  assert.equal(kept.length === 1 && kept[0].endsWith(' 1.1.1'), true, 'files kept: ' + kept.join(' | '));
+  assert.equal(kept.length === 1 && kept[0].endsWith(' 1.1.3'), true, 'files kept: ' + kept.join(' | '));
 
   step('the server is switched off altogether: the page still opens, and still saves');
   shop.server.closeAllConnections();
@@ -933,7 +933,7 @@ async function offlineAndUpdate(browser) {
   await tab.goto(shop.url + eventHash);
   await tab.until(LIST);
   assert.match(await tab.text(), /Msiba wa Faraja/);
-  assert.equal(await tab.js('document.documentElement.dataset.version'), '1.1.1');
+  assert.equal(await tab.js('document.documentElement.dataset.version'), '1.1.3');
   await tab.tap('Ongeza mtu');
   await tab.until("document.querySelector('.quick')");
   await tab.type('Jina', 'Tumaini Amani');

@@ -85,7 +85,7 @@ export const BREAKS = [
   {
     name: "a script is loaded without the version in its address",
     file: 'share.js',
-    find: "from './store.js?v=1.1.0'",
+    find: "from './store.js?v=1.1.2'",
     replace: "from './store.js'",
     test: 'tests/version.test.mjs',
   },

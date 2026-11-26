@@ -1,4 +1,4 @@
-# Mchango ya tov
+# Mchango wa tov
 
 Daftari la mchango kwenye simu yako: harusi, msiba, mahafali au matibabu.
 Andika ahadi, weka malipo yanapoingia, kisha tuma orodha safi kwenye group la WhatsApp.
@@ -21,7 +21,7 @@ Fungua: **https://mchango.tov.co.tz** (bure, bila kujisajili).
 
 ## Mambo ya kujua
 
-- **Mchango ya tov haishiki, haitumi wala haiombi pesa.** Ni daftari lenye hesabu na kitufe cha kusambaza.
+- **Mchango wa tov haishiki, haitumi wala haiombi pesa.** Ni daftari lenye hesabu na kitufe cha kusambaza.
 - **Orodha inakaa kwenye simu yako tu.** Hakuna seva inayoiona. Ukurasa unapakua faili zake zenyewe tu.
 - **Orodha inaweza kupotea** ukipoteza simu, ukifuta kumbukumbu za kivinjari, au simu ikizifuta yenyewe.
   Hifadhi nakala mara kwa mara. Kwenye iPhone, weka ukurasa kwenye Home Screen **kabla** ya kuanza orodha:

@@ -61,7 +61,7 @@ test("sw.js keeps exactly the files the page needs, each with the current versio
 
 test('the manifest opens the page from its own folder, with both icon sizes', () => {
   const m = JSON.parse(read('manifest.webmanifest'));
-  assert.equal(m.name, 'Mchango ya tov');
+  assert.equal(m.name, 'Mchango wa tov');
   assert.equal(m.start_url, './');
   assert.equal(m.scope, './');
   assert.equal(m.display, 'standalone');
