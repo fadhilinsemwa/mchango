@@ -130,8 +130,8 @@ async function openTab(browser, width) {
     }
     return got.result.value;
   };
-  const until = async (expression, what = expression) => {
-    for (let i = 0; i < 100; i++) {
+  const until = async (expression, what = expression, tries = 100) => {
+    for (let i = 0; i < tries; i++) {
       if (await js(`!!(${expression})`)) return;
       await new Promise((r) => setTimeout(r, 50));
     }
@@ -142,7 +142,8 @@ async function openTab(browser, width) {
     cdp, js, until, requests, failures, errors, width, browserContextId,
     goto: async (url) => {
       await cdp('Page.navigate', { url });
-      await until(`document.readyState === 'complete' && ${q('#app main')}`, 'page loaded: ' + url);
+      // A copy served over the internet may be on a slow line: a page load gets 60 s there, 5 s here.
+      await until(`document.readyState === 'complete' && ${q('#app main')}`, 'page loaded: ' + url, LIVE ? 1200 : 100);
     },
     /** Tap the first link or button whose text is exactly `text`. */
     tap: async (text) => {
