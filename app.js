@@ -183,6 +183,10 @@ export const t = {
     'Choose your own number, so the copy lives off this phone.',
   ],
   backupDownload: ['Pakua', 'Download'],
+  backupDownloadHint: [
+    'Pakua huweka nakala kwenye simu hii. Itakusaidia kivinjari kikifuta orodha.',
+    'Download puts a copy on this phone. It helps if the browser clears the list.',
+  ],
   backupDone: ['Nakala imehifadhiwa.', 'The copy was saved.'],
   lastBackup: ['Nakala ya mwisho: {when}', 'Last copy: {when}'],
   neverBackedUp: ['Orodha hii bado haina nakala.', 'This list has no copy yet.'],
@@ -198,8 +202,8 @@ export const t = {
   openBackup: ['Fungua nakala', 'Open a copy'],
   openLabel: ['Chagua faili la nakala', 'Choose the copy file'],
   openHint: [
-    'Jina la faili linaanza na "mchango-". Kama ulilituma WhatsApp, lihifadhi kwanza kwenye simu, kisha lichague hapa.',
-    'The name of the file starts with "mchango-". If you sent it on WhatsApp, save it to the phone first, then choose it here.',
+    'Faili ulilopakua lina jina linaloanza na "mchango-". Faili lililotoka WhatsApp: liguse kwanza ndani ya WhatsApp ili lishuke kwenye simu. Hapo jina lake huanza na "DOC-". Simu ile ile iliyolituma haitalionyesha hapa: tumia faili ulilopakua.',
+    'A file you downloaded has a name that starts with "mchango-". A file from WhatsApp: tap it inside WhatsApp first so it comes down to the phone. Its name then starts with "DOC-". The same phone that sent it will not show it here: use the file you downloaded.',
   ],
   importRefused: [
     'Faili halikufunguliwa na hakuna kilichobadilika: {why}.',
@@ -1029,6 +1033,7 @@ function backupView(data) {
     canSend && send,
     canSend && h('p', { class: 'hint' }, T('backupSendHint')),
     download,
+    h('p', { class: 'hint' }, T('backupDownloadHint')),
     h('a', { class: 'btn block quiet', href: '#/open' }, T('openBackup')),
   );
 }
