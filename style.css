@@ -1,4 +1,4 @@
-/* Mchango wa tov — phone first (390 px), two columns from 900 px. System fonts only.
+/* Mchango — phone first (390 px), two columns from 900 px. System fonts only.
    One page stays on the screen; its three places sit at the bottom; forms are panels over it. */
 :root {
   --c: #6B4423; --deep: #4A2E15; --ink: #1F1510; --ground: #FAF6F1; --soft: #EFE2D3;

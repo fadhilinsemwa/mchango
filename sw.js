@@ -2,19 +2,19 @@
 // It fetches nothing but these files, from the address it was served from.
 // A new version waits until the treasurer taps "Fungua upya" (see app.js).
 
-const VERSION = '1.1.2';
+const VERSION = '1.1.3';
 const FILES = [
   './',
   'index.html',
-  'style.css?v=1.1.2',
-  'app.js?v=1.1.2',
-  'parse.js?v=1.1.2',
-  'store.js?v=1.1.2',
-  'share.js?v=1.1.2',
-  'backup.js?v=1.1.2',
-  'manifest.webmanifest?v=1.1.2',
-  'icons/icon-192.png?v=1.1.2',
-  'icons/icon-512.png?v=1.1.2',
+  'style.css?v=1.1.3',
+  'app.js?v=1.1.3',
+  'parse.js?v=1.1.3',
+  'store.js?v=1.1.3',
+  'share.js?v=1.1.3',
+  'backup.js?v=1.1.3',
+  'manifest.webmanifest?v=1.1.3',
+  'icons/icon-192.png?v=1.1.3',
+  'icons/icon-512.png?v=1.1.3',
 ];
 // The folder is part of the name: two copies under one address keep apart.
 const PREFIX = 'mchango ' + self.registration.scope + ' ';

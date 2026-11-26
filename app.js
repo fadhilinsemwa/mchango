@@ -2,16 +2,16 @@
 // (Kiswahili first, English second); nothing is written inline.
 // Every piece of text reaches the page as text, never as HTML.
 
-import { fmt, normPhone, parseQuick, parseSms } from './parse.js?v=1.1.2';
-import * as store from './store.js?v=1.1.2';
-import { buildShare, whatsappLink } from './share.js?v=1.1.2';
-import { MAX_FILE_BYTES, backupDue, backupFileName, buildBackup, checkBackup, nameWith } from './backup.js?v=1.1.2';
+import { fmt, normPhone, parseQuick, parseSms } from './parse.js?v=1.1.3';
+import * as store from './store.js?v=1.1.3';
+import { buildShare, whatsappLink } from './share.js?v=1.1.3';
+import { MAX_FILE_BYTES, backupDue, backupFileName, buildBackup, checkBackup, nameWith } from './backup.js?v=1.1.3';
 
-export const VERSION = '1.1.2';
+export const VERSION = '1.1.3';
 
 // key: [Kiswahili, English]
 export const t = {
-  appTitle: ['Mchango wa tov', 'Mchango by tov'],
+  appTitle: ['Mchango', 'Mchango'],
   langSwitch: ['English', 'Kiswahili'],
   allLists: ['Michango yote', 'All lists'],
   close: ['Funga', 'Close'],
@@ -22,8 +22,8 @@ export const t = {
   ],
   onPhoneOnly: ['Orodha inakaa kwenye simu yako tu', 'The list stays on your phone only'],
   noMoney: [
-    'Mchango wa tov haishiki wala kutuma pesa. Ni daftari lako tu.',
-    'Mchango by tov never holds or sends money. It is only your notebook.',
+    'Mchango haishiki wala kutuma pesa. Ni daftari lako tu.',
+    'Mchango never holds or sends money. It is only your notebook.',
   ],
   helpLoss: [
     'Orodha inaweza kupotea ukipoteza simu, ukifuta kumbukumbu za kivinjari, au simu ikizifuta yenyewe. Hifadhi nakala mara kwa mara.',
