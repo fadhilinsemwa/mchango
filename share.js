@@ -1,8 +1,8 @@
 // share.js — the short, clean text that goes to the committee's WhatsApp group.
 // Pure: it builds text and nothing else. A phone number never appears in it.
 
-import { fmt } from './parse.js?v=0.1.0';
-import { summarise } from './store.js?v=0.1.0';
+import { fmt } from './parse.js?v=1.0.0';
+import { summarise } from './store.js?v=1.0.0';
 
 export const PART_SIZE = 40; // more people than this: the text is split into parts
 

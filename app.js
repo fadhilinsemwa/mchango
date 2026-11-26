@@ -2,12 +2,12 @@
 // (Kiswahili first, English second); nothing is written inline.
 // Every piece of text reaches the page as text, never as HTML.
 
-import { fmt, normPhone, parseQuick, parseSms } from './parse.js?v=0.1.0';
-import * as store from './store.js?v=0.1.0';
-import { buildShare, whatsappLink } from './share.js?v=0.1.0';
-import { MAX_FILE_BYTES, backupDue, backupFileName, buildBackup, checkBackup, nameWith } from './backup.js?v=0.1.0';
+import { fmt, normPhone, parseQuick, parseSms } from './parse.js?v=1.0.0';
+import * as store from './store.js?v=1.0.0';
+import { buildShare, whatsappLink } from './share.js?v=1.0.0';
+import { MAX_FILE_BYTES, backupDue, backupFileName, buildBackup, checkBackup, nameWith } from './backup.js?v=1.0.0';
 
-export const VERSION = '0.1.0';
+export const VERSION = '1.0.0';
 
 // key: [Kiswahili, English]
 export const t = {
