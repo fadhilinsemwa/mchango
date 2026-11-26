@@ -60,3 +60,53 @@ export function smsTimeIso(day, month, yy, hour12, minute, ampm) {
   const hour24 = (h % 12) + (half === 'PM' ? 12 : 0);
   return `${year}-${two(mo)}-${two(d)}T${two(hour24)}:${two(mi)}:00+03:00`;
 }
+
+// ---------- quick add: many people at once, one per line ----------
+
+// An amount is digits, optionally grouped in threes by a comma or a space
+// (50000, 50,000, 50 000, 1 500 000), or digits followed by k (50k).
+const AMOUNT = /^(?:\d{1,3}(?:[ ,]\d{3})+|\d+k?)$/i;
+const SEPARATORS = ' ,-–—:';
+
+function amountValue(text) {
+  if (!AMOUNT.test(text)) return null;
+  const thousands = /k$/i.test(text) ? 1000 : 1;
+  return Number(text.replace(/[ ,k]/gi, '')) * thousands;
+}
+
+/**
+ * One line, e.g. "Zawadi Tumaini 50,000". The LONGEST ending that is an amount is
+ * the pledge; the rest is the name. Returns {name, pledge} or {why} when unreadable:
+ * no_amount, zero, too_big, no_name, long_name.
+ */
+export function parseQuickLine(line) {
+  const s = String(line).replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < s.length; i++) {
+    if (i > 0 && !SEPARATORS.includes(s[i - 1])) continue; // an amount starts a word
+    // "50,00" or "1,50,000" is a mistyped amount, not a name ending in a number:
+    // a comma straight after a digit never starts a new amount.
+    if (i > 1 && s[i - 1] === ',' && /\d/.test(s[i - 2])) continue;
+    const pledge = amountValue(s.slice(i));
+    if (pledge === null) continue;
+    const name = s.slice(0, i).replace(/[\s,\-–—:]+$/, '');
+    if (pledge === 0) return { why: 'zero' };
+    if (pledge > MAX_AMOUNT) return { why: 'too_big' };
+    if (name === '') return { why: 'no_name' };
+    if (name.length > MAX_NAME) return { why: 'long_name' };
+    return { name, pledge };
+  }
+  return { why: 'no_amount' };
+}
+
+/** Many lines. Good lines become people; the others are handed back, never guessed. */
+export function parseQuick(text) {
+  const people = [];
+  const unread = [];
+  for (const line of String(text).split(/\r?\n/)) {
+    if (line.trim() === '') continue;
+    const got = parseQuickLine(line);
+    if (got.why) unread.push({ line: line.trim(), why: got.why });
+    else people.push(got);
+  }
+  return { people, unread };
+}
