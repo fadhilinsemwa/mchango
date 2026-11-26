@@ -12,6 +12,13 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 export const BREAKS = [
   {
+    name: "typed text is put on the page as HTML",
+    file: "app.js",
+    find: "else el.append(document.createTextNode(String(kid)));",
+    replace: "else el.insertAdjacentHTML('beforeend', String(kid));",
+    test: "tests/browser.mjs",
+  },
+  {
     name: "a transaction ID recorded twice is accepted",
     file: "store.js",
     find: "if (dup) return { action: 'duplicate', dup };\n  }\n  return { action: 'save' };",
@@ -64,7 +71,8 @@ export const BREAKS = [
 ];
 
 function runTest(dir, test, tz) {
-  const run = spawnSync(process.execPath, ['--test', test], {
+  const args = test.endsWith('browser.mjs') ? [test] : ['--test', test];
+  const run = spawnSync(process.execPath, args, {
     cwd: dir,
     env: { ...process.env, TZ: tz ?? 'UTC' },
     encoding: 'utf8',

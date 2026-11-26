@@ -3,7 +3,8 @@
 // 1. Every test file runs three times, with the machine pretending to be in three
 //    time zones. Code that leans on the machine's own zone cannot pass all three.
 // 2. No test may be skipped.
-// 3. The deliberate breaks (tests/breaks.mjs): each safety line is removed once
+// 3. The page is driven in a real headless browser (tests/browser.mjs).
+// 4. The deliberate breaks (tests/breaks.mjs): each safety line is removed once
 //    and its test must go red. A safety line with no test guarding it is a failure.
 
 import { spawnSync } from 'node:child_process';
@@ -32,6 +33,11 @@ for (const tz of ZONES) {
   console.log(`TZ=${tz}: ${tests} tests, ${fail} failed, ${skipped} skipped -> ${good ? 'GREEN' : 'RED'}`);
   if (!good) ok = false;
 }
+
+console.log('\n=== the page in a real browser ===');
+const browser = spawnSync(process.execPath, ['tests/browser.mjs'], { encoding: 'utf8' });
+console.log(browser.stdout + browser.stderr);
+if (browser.status !== 0) ok = false;
 
 console.log('\n=== deliberate breaks ===');
 if (!runBreaks()) ok = false;
