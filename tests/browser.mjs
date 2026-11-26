@@ -4,6 +4,13 @@
 // One whole contribution is run at 390, 820 and 1440 px wide, each in a clean
 // browser profile, WITH THE NETWORK OFF once the page has loaded.
 // Set SHOTS=<folder> to keep screenshots. Set CHROME=<path> if Chrome is elsewhere.
+// CHROME_FLAGS="..." adds flags to Chrome.
+// Set LIVE=<address> to run against a copy that is already being served, for example
+//   LIVE=https://mchango.tov.co.tz/ HEADERS=1 node tests/browser.mjs
+// It checks that every served file is byte for byte the one in this folder, runs the
+// whole contribution at the three widths with the network off, the share text, the
+// copies and the home-screen hints. HEADERS=1 also asks for the five security
+// headers and the caching rules (a plain file host such as GitHub Pages has none).
 
 import { spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -17,6 +24,7 @@ import { checkBackup } from '../backup.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SHOTS = process.env.SHOTS ?? null;
+const LIVE = process.env.LIVE ? new URL(process.env.LIVE).href : null;
 const CHROME =
   process.env.CHROME ??
   [
@@ -37,7 +45,8 @@ async function launch() {
   const profile = mkdtempSync(join(tmpdir(), 'mchango-chrome-'));
   const proc = spawn(CHROME, [
     '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
-    '--no-first-run', '--no-default-browser-check', '--disable-extensions', 'about:blank',
+    '--no-first-run', '--no-default-browser-check', '--disable-extensions',
+    ...(process.env.CHROME_FLAGS ?? '').split(' ').filter(Boolean), 'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
   const wsUrl = await new Promise((ok, fail) => {
     let seen = '';
@@ -796,25 +805,69 @@ async function homeScreenHints(browser, base) {
 
 // ---------- run ----------
 
-const site = await serve({ root: ROOT });
-const fork = await serve({ root: ROOT, prefix: '/mchango/' });
+/** A copy that is already being served: the same files as this folder, and (HEADERS=1) the headers. */
+async function liveFiles(base) {
+  const list = /const FILES = \[([^\]]+)\]/.exec(readFileSync(join(ROOT, 'sw.js'), 'utf8'))[1];
+  const asked = ['sw.js', ...[...list.matchAll(/'([^']+)'/g)].map((m) => m[1])];
+  for (const address of asked) {
+    const res = await fetch(new URL(address, base), { redirect: 'manual', cache: 'no-store' });
+    assert.equal(res.status, 200, `${address}: ${res.status}`);
+    const local = readFileSync(join(ROOT, address === './' ? 'index.html' : address.split('?')[0]));
+    assert.equal(Buffer.from(await res.arrayBuffer()).equals(local), true, `${address} is not the file in this folder`);
+    if (process.env.HEADERS !== '1') continue;
+    const h = res.headers;
+    assert.match(h.get('strict-transport-security') ?? '', /max-age=\d+/, address + ': no HSTS');
+    assert.equal(h.get('x-content-type-options'), 'nosniff', address);
+    assert.equal(h.get('x-frame-options'), 'DENY', address);
+    assert.match(h.get('referrer-policy') ?? '', /./, address + ': no Referrer-Policy');
+    const csp = h.get('content-security-policy') ?? '';
+    for (const part of ["default-src 'self'", "connect-src 'self'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'"]) {
+      assert.equal(csp.includes(part), true, `${address}: the CSP lacks ${part}`);
+    }
+    const cache = h.get('cache-control') ?? '';
+    const fresh = ['./', 'index.html', 'sw.js'].includes(address) || address.startsWith('manifest.webmanifest');
+    if (fresh) assert.match(cache, /no-cache|max-age=0/, `${address} must be asked for afresh every time, got "${cache}"`);
+    else assert.match(cache, /max-age=31536000/, `${address} may be kept a year, got "${cache}"`);
+    if (address.startsWith('manifest.webmanifest')) assert.match(h.get('content-type') ?? '', /application\/manifest\+json/);
+    if (address.includes('.js')) assert.match(h.get('content-type') ?? '', /javascript/, address);
+  }
+  if (process.env.HEADERS === '1') {
+    const post = await fetch(base, { method: 'POST', body: 'x', redirect: 'manual' });
+    assert.equal(post.status, 405, 'a POST must be refused, got ' + post.status);
+    assert.equal(post.headers.get('x-frame-options'), 'DENY', 'the refusal carries the headers too');
+    for (const hidden of ['.git/config', 'tests/browser.mjs', 'package.json', 'README.md']) {
+      const res = await fetch(new URL(hidden, base), { redirect: 'manual' });
+      assert.equal(res.status, 404, `${hidden} is served (${res.status})`);
+    }
+  }
+  return asked.length;
+}
+
+const site = LIVE ? { url: LIVE, server: { close() {} } } : await serve({ root: ROOT });
+const fork = LIVE ? { server: { close() {} } } : await serve({ root: ROOT, prefix: '/mchango/' });
 const browser = await launch();
 let failed = false;
 try {
+  if (LIVE) {
+    console.log(`LIVE: ${LIVE}` + (process.env.HEADERS === '1' ? ' (with headers)' : ''));
+    console.log(`  ${await liveFiles(LIVE)} served files are the files in this folder`);
+  }
   for (const width of [390, 820, 1440]) {
     console.log(`one whole contribution at ${width} px, network off`);
     await wholeEvent(browser, site.url, width);
   }
 
-  console.log('the same page served under /mchango/, as a fork would serve it');
-  const tab = await openTab(browser, 390);
-  await tab.goto(fork.url);
-  await tab.tap('Anza mchango mpya');
-  await tab.until(`document.querySelector('form')`);
-  assert.deepEqual(tab.failures, []);
-  assert.deepEqual(tab.errors, []);
-  assert.equal(tab.requests.every((r) => new URL(r.url).pathname.startsWith('/mchango/')), true);
-  await tab.close();
+  if (!LIVE) {
+    console.log('the same page served under /mchango/, as a fork would serve it');
+    const tab = await openTab(browser, 390);
+    await tab.goto(fork.url);
+    await tab.tap('Anza mchango mpya');
+    await tab.until(`document.querySelector('form')`);
+    assert.deepEqual(tab.failures, []);
+    assert.deepEqual(tab.errors, []);
+    assert.equal(tab.requests.every((r) => new URL(r.url).pathname.startsWith('/mchango/')), true);
+    await tab.close();
+  }
 
   console.log('the text for WhatsApp: exact, one line per person at 390 px, never sent by itself');
   await shareScreen(browser, site.url);
@@ -822,8 +875,10 @@ try {
   console.log('save a copy, open a copy');
   await copyScreens(browser, site.url);
 
-  console.log('version 1, then version 2, then no server at all');
-  await offlineAndUpdate(browser);
+  if (!LIVE) {
+    console.log('version 1, then version 2, then no server at all');
+    await offlineAndUpdate(browser);
+  }
 
   console.log('the phone screen: Android offers it, iPhone is told how');
   await homeScreenHints(browser, site.url);
@@ -842,7 +897,7 @@ try {
   console.log(`  ${files.length} files: ${raw} bytes on disk, ${wire} bytes over the wire`);
   assert.equal(wire < 80000, true, `over the wire it is ${wire} bytes`);
 
-  console.log('BROWSER TESTS GREEN');
+  console.log(LIVE ? 'LIVE BROWSER TESTS GREEN' : 'BROWSER TESTS GREEN');
 } catch (err) {
   failed = true;
   console.error('BROWSER TEST FAILED\n' + (err.stack ?? err));

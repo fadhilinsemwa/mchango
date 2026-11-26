@@ -124,6 +124,12 @@ Needs Node 22 or newer and Google Chrome; nothing is installed. It runs the unit
 zones, drives the page in a real browser at phone, tablet and desktop widths (also with the network off, and
 from version 1 to version 2), and then breaks the code on purpose in eleven places to prove a test notices.
 
+To check a copy that is already being served (every file byte for byte, then the whole run in the browser):
+
+```
+LIVE=https://<its address>/ node tests/browser.mjs
+```
+
 If you change anything, change the version (`VERSION`) everywhere it appears; `tests/version.test.mjs` tells
 you where you forgot. That is how phones that already opened the page get the new version.
 
