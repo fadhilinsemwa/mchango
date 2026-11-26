@@ -2,7 +2,7 @@
 // Pure: no page, no storage. A file that is opened is NOT trusted: one thing wrong
 // refuses the whole file, and nothing on the phone changes.
 
-import { MAX_AMOUNT, MAX_NAME, eatIso } from './parse.js?v=1.0.0';
+import { MAX_AMOUNT, MAX_NAME, eatIso } from './parse.js?v=1.1.0';
 
 export const SCHEMA = 1;
 export const MAX_FILE_BYTES = 2_000_000;

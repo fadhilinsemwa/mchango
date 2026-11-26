@@ -147,7 +147,7 @@ async function openTab(browser, width) {
     /** Tap the first link or button whose text is exactly `text`. */
     tap: async (text) => {
       const found = await js(`(() => {
-        const el = [...document.querySelectorAll('a, button, summary, label.btn')].find((e) => !e.closest('[hidden]') && e.textContent.trim() === ${JSON.stringify(text)});
+        const el = [...document.querySelectorAll('a, button, summary, label.btn')].find((e) => !e.closest('[hidden], [inert]') && e.textContent.trim() === ${JSON.stringify(text)});
         if (!el) return false;
         el.click();
         return true;
@@ -157,7 +157,7 @@ async function openTab(browser, width) {
     /** Type into the field whose label is exactly `label`. */
     type: async (label, value) => {
       const found = await js(`(() => {
-        const lab = [...document.querySelectorAll('label')].find((e) => !e.closest('[hidden]') && e.textContent.trim() === ${JSON.stringify(label)});
+        const lab = [...document.querySelectorAll('label')].find((e) => !e.closest('[hidden], [inert]') && e.textContent.trim() === ${JSON.stringify(label)});
         const el = lab && document.getElementById(lab.htmlFor);
         if (!el) return false;
         el.value = ${JSON.stringify(value)};
@@ -186,6 +186,7 @@ async function openTab(browser, width) {
 
 /** No sideways scroll; every control big enough; text big enough and readable (contrast 4.5:1). */
 async function checkScreen(tab, name) {
+  await tab.until('document.getAnimations().length === 0', 'the panel has come to rest');
   const report = await tab.js(`(() => {
     const out = { wide: document.documentElement.scrollWidth - document.documentElement.clientWidth, small: [], tiny: [], faint: [] };
     const rgb = (text) => { const m = text.match(/[\\d.]+/g).map(Number); return { r: m[0], g: m[1], b: m[2], a: m[3] ?? 1 }; };
@@ -223,6 +224,11 @@ async function checkScreen(tab, name) {
   await tab.shot(name);
 }
 
+/** The contribution's own page, with no panel open over it. */
+const LIST = "(document.querySelector('.page.event') && !document.querySelector('.sheet'))";
+/** A panel is open over the page, and the page under it cannot be used. */
+const PANEL = "(document.querySelector('.sheet[role=dialog]') && document.querySelector('#app > main[inert]'))";
+
 const totals = (tab) =>
   tab.js(`Object.fromEntries([...document.querySelectorAll('.totals .fig')].map((f) => [f.children[0].textContent, f.children[1].textContent]))`);
 
@@ -245,13 +251,15 @@ async function wholeEvent(browser, base, width) {
 
   step('start a list');
   await tab.tap('Anza mchango mpya');
-  await tab.until(`document.querySelector('form')`);
+  await tab.until(`document.querySelector('form') && ${PANEL}`);
+  assert.equal(await tab.js(`document.querySelector('.page.home') !== null`), true, 'the first page is no longer under the form');
   await checkScreen(tab, '2-new-list');
   await tab.type('Jina la mchango', 'Harusi ya Zawadi na Tumaini');
   await tab.type('Lengo, TZS (si lazima)', '5,000,000');
   await tab.tap('Hifadhi');
-  await tab.until(`document.querySelector('.page.event')`);
+  await tab.until(LIST);
   assert.match(await tab.text(), /Bado hakuna mtu/);
+  assert.deepEqual(await tab.js(`[...document.querySelectorAll('.tabs a')].map((a) => a.textContent + (a.getAttribute('aria-current') ? ' *' : ''))`), ['Watu *', 'Sambaza', 'Nakala']);
   await checkScreen(tab, '3-empty-list');
   const eventHash = await tab.js('location.hash');
 
@@ -263,7 +271,7 @@ async function wholeEvent(browser, base, width) {
   await tab.type('Ahadi, TZS', '100,000');
   await checkScreen(tab, '4-add-person');
   await tab.tap('Hifadhi');
-  await tab.until(`document.querySelector('.people')`);
+  await tab.until(`${LIST} && document.querySelector('.people')`);
 
   step('add many at once; the unreadable line is handed back');
   await tab.tap('Ongeza mtu');
@@ -281,7 +289,7 @@ async function wholeEvent(browser, base, width) {
   await tab.type('Jina', XSS_NAME);
   await tab.type('Ahadi, TZS', '1000');
   await tab.tap('Hifadhi');
-  await tab.until(`document.querySelector('.people')`);
+  await tab.until(LIST);
   assert.equal(await tab.js(`document.querySelector('main img')`), null, 'a typed name became an <img> element');
   assert.equal(await tab.js('window.__xss'), undefined);
   assert.equal(await tab.js(`[...document.querySelectorAll('.row-name')].some((e) => e.textContent === ${JSON.stringify(XSS_NAME)})`), true);
@@ -302,7 +310,7 @@ async function wholeEvent(browser, base, width) {
   assert.equal(/Salio|369,601/.test(await tab.js('document.querySelector("form").innerText')), false);
   await checkScreen(tab, '7-sms-read');
   await tab.tap('Thibitisha malipo');
-  await tab.until(`document.querySelector('.page.event')`);
+  await tab.until(LIST);
   assert.equal((await totals(tab)).Zimelipwa, 'TZS 500');
 
   step('the same SMS again is refused as already recorded');
@@ -322,7 +330,7 @@ async function wholeEvent(browser, base, width) {
   await tab.type('Kiasi, TZS', '60,000');
   await tab.js(`(() => { const s = document.querySelector('#who'); s.value = [...s.options].find((o) => o.textContent === 'Upendo Faraja').value; s.dispatchEvent(new Event('change')); })()`);
   await tab.js(`(() => { const b = [...document.querySelectorAll('button')].find((e) => e.textContent === 'Thibitisha malipo'); b.click(); b.click(); b.form.requestSubmit(); })()`);
-  await tab.until(`document.querySelector('.page.event')`);
+  await tab.until(LIST);
   assert.deepEqual(await totals(tab), { Lengo: 'TZS 5,000,000', Ahadi: 'TZS 451,000', Zimelipwa: 'TZS 60,500', Bado: 'TZS 390,500' });
 
   step('a payer who is not on the list is added on the spot with pledge 0');
@@ -332,7 +340,7 @@ async function wholeEvent(browser, base, width) {
   await tab.js(`(() => { const s = document.querySelector('#who'); s.value = 'new'; s.dispatchEvent(new Event('change')); })()`);
   await tab.type('Jina la mtu mpya', 'Tumaini Upendo');
   await tab.tap('Thibitisha malipo');
-  await tab.until(`document.querySelector('.page.event')`);
+  await tab.until(LIST);
   assert.deepEqual(await totals(tab), { Lengo: 'TZS 5,000,000', Ahadi: 'TZS 451,000', Zimelipwa: 'TZS 65,500', Bado: 'TZS 390,500' });
 
   step('people are listed bado, then sehemu, then amemaliza, each with its word');
@@ -361,8 +369,8 @@ async function wholeEvent(browser, base, width) {
   await tab.tap('Tengua');
   await tab.until(`document.querySelector('.pays .greyed')`);
   assert.match(await tab.text(), /imetenguliwa/);
-  await tab.hash(eventHash);
-  await tab.until(`document.querySelector('.page.event')`);
+  await tab.tap('Funga');
+  await tab.until(LIST);
   assert.equal((await totals(tab)).Zimelipwa, 'TZS 5,500');
   await tab.js(`[...document.querySelectorAll('.row')].find((r) => r.querySelector('.row-name').textContent === 'Upendo Faraja').click()`);
   await tab.until(`document.querySelector('.pays')`);
@@ -372,9 +380,11 @@ async function wholeEvent(browser, base, width) {
   step('raise a pledge; remove a person, then put them back');
   await tab.type('Ahadi, TZS', '150,000');
   await tab.tap('Hifadhi');
-  await tab.until(`document.querySelector('.note.ok')`);
+  await tab.until(`${LIST} && document.querySelector('.note.ok')`); // Hifadhi always closes the panel
+  await tab.js(`[...document.querySelectorAll('.row')].find((r) => r.querySelector('.row-name').textContent === 'Upendo Faraja').click()`);
+  await tab.until(`[...document.querySelectorAll('button')].some((b) => b.textContent === 'Ondoa kwenye orodha')`);
   await tab.tap('Ondoa kwenye orodha');
-  await tab.until(`document.querySelector('.page.event')`);
+  await tab.until(LIST);
   assert.deepEqual(await totals(tab), { Lengo: 'TZS 5,000,000', Ahadi: 'TZS 351,000', Zimelipwa: 'TZS 5,500', Bado: 'TZS 350,500' });
   assert.match(await tab.text(), /Walioondolewa \(1\)/);
   await tab.js(`document.querySelector('.gone').open = true`);
@@ -383,17 +393,17 @@ async function wholeEvent(browser, base, width) {
   await tab.until(`[...document.querySelectorAll('button')].some((b) => b.textContent === 'Rudisha kwenye orodha')`);
   await tab.tap('Rudisha kwenye orodha');
   await tab.until(`[...document.querySelectorAll('button')].some((b) => b.textContent === 'Ondoa kwenye orodha')`);
-  await tab.hash(eventHash);
-  await tab.until(`document.querySelector('.page.event')`);
+  await tab.js(`document.querySelector('.sheet').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  await tab.until(LIST);
   const final = { Lengo: 'TZS 5,000,000', Ahadi: 'TZS 501,000', Zimelipwa: 'TZS 65,500', Bado: 'TZS 440,500' };
   assert.deepEqual(await totals(tab), final);
 
   step('English switch, and back');
-  await tab.hash('#/');
+  await tab.tap('‹ Michango yote');
   await tab.until(`document.querySelector('.page.home')`);
   await tab.tap('English');
   await tab.until(`document.documentElement.lang === 'en'`);
-  assert.match(await tab.text(), /My lists/);
+  assert.match(await tab.text(), /All lists/);
   await checkScreen(tab, '12-home-english');
   await tab.tap('Kiswahili');
   await tab.until(`document.documentElement.lang === 'sw'`);
@@ -407,7 +417,7 @@ async function wholeEvent(browser, base, width) {
 
   step('deleting the list asks twice');
   await tab.tap('Zaidi');
-  await tab.until(`document.querySelector('.danger')`);
+  await tab.until(`document.querySelector('.danger') && ${PANEL}`);
   await checkScreen(tab, '13-edit');
   await tab.tap('Futa orodha hii');
   assert.match(await tab.text(), /Haiwezi kurudishwa/);
@@ -442,7 +452,7 @@ async function shareScreen(browser, base) {
   await tab.until("document.querySelector('form')");
   await tab.type('Jina la mchango', 'Harusi ya Zawadi na Tumaini');
   await tab.tap('Hifadhi');
-  await tab.until("document.querySelector('.page.event')");
+  await tab.until(LIST);
   const eventHash = await tab.js('location.hash');
   await tab.tap('Ongeza mtu');
   await tab.until("document.querySelector('.quick')");
@@ -457,10 +467,12 @@ async function shareScreen(browser, base) {
     await tab.type('Kiasi, TZS', amount);
     await tab.js(`(() => { const s = document.querySelector('#who'); s.value = [...s.options].find((o) => o.textContent === ${JSON.stringify(name)}).value; s.dispatchEvent(new Event('change')); })()`);
     await tab.tap('Thibitisha malipo');
-    await tab.until("document.querySelector('.page.event')");
+    await tab.until(LIST);
   }
-  await tab.tap('Sambaza');
+  await tab.tap('Sambaza'); // the place at the bottom of the page
   await tab.until("document.querySelector('.bubble')");
+  assert.equal(await tab.js("document.querySelector('.tabs [aria-current]').textContent"), 'Sambaza');
+  assert.match(await tab.js("document.querySelector('.page.event h1').textContent + ' ' + document.querySelector('.bar').textContent"), /Harusi ya Zawadi na Tumaini Zimelipwa TZS 600,000/, 'the name and the sums left the top of the page');
   const expected = [
     '*Harusi ya Zawadi na Tumaini*',
     'Ahadi: TZS 1,000,000',
@@ -523,7 +535,7 @@ async function copyScreens(browser, base) {
   await tab.until("document.querySelector('form')");
   await tab.type('Jina la mchango', 'Harusi ya Zawadi na Tumaini');
   await tab.tap('Hifadhi');
-  await tab.until("document.querySelector('.page.event')");
+  await tab.until(LIST);
   const eventHash = await tab.js('location.hash');
 
   step('an empty list has nothing to lose: no reminder yet');
@@ -541,7 +553,7 @@ async function copyScreens(browser, base) {
   await tab.type('Kiasi, TZS', '60,000');
   await tab.js(`(() => { const s = document.querySelector('#who'); s.value = [...s.options].find((o) => o.textContent === 'Furaha Amani').value; s.dispatchEvent(new Event('change')); })()`);
   await tab.tap('Thibitisha malipo');
-  await tab.until("document.querySelector('.page.event')");
+  await tab.until(LIST);
 
   step('the list changed and was never saved: a reminder, not a blocking box');
   assert.match(await tab.js("document.querySelector('.copy-line .note.warn').textContent"), /Orodha hii bado haina nakala\. Hifadhi nakala sasa\./);
@@ -550,6 +562,8 @@ async function copyScreens(browser, base) {
   step('the copy screen says what the file holds; the file can be shared where the browser shares files');
   await tab.tap('Hifadhi nakala');
   await tab.until("[...document.querySelectorAll('button')].some((b) => b.textContent === 'Pakua')");
+  assert.equal(await tab.js("document.querySelector('.tabs [aria-current]').textContent"), 'Nakala');
+  assert.equal(await tab.js("document.querySelector('.tabs .dot') !== null"), true, 'the place for copies does not show that a copy is due');
   assert.match(await tab.text(), /Faili hili lina majina na namba za simu za wachangiaji/);
   const sharing = await tab.js(`(() => {
     if (typeof navigator.canShare !== 'function') return 'this browser has no file sharing';
@@ -578,8 +592,8 @@ async function copyScreens(browser, base) {
 
   step('"Tuma nakala WhatsApp" hands over one .txt file, and only after the tap');
   await tab.js("navigator.canShare = () => true; navigator.share = async (data) => { window.__sent = data.files.map((f) => [f.name, f.type, f.size > 100]); }");
-  await tab.hash(eventHash);
-  await tab.until("document.querySelector('.page.event')");
+  await tab.tap('Watu');
+  await tab.until("document.querySelector('.copy-line')");
   await tab.tap('Hifadhi nakala');
   await tab.until("[...document.querySelectorAll('button')].some((b) => b.textContent === 'Tuma nakala WhatsApp')");
   assert.equal(await tab.js('window.__sent'), undefined);
@@ -595,7 +609,7 @@ async function copyScreens(browser, base) {
   await tab.type('Kiasi, TZS', '5,000');
   await tab.js(`(() => { const s = document.querySelector('#who'); s.value = [...s.options].find((o) => o.textContent === 'Upendo Faraja').value; s.dispatchEvent(new Event('change')); })()`);
   await tab.tap('Thibitisha malipo');
-  await tab.until("document.querySelector('.page.event')");
+  await tab.until(LIST);
   await tab.hash('#/');
   await tab.until("document.querySelector('.page.home')");
   const before = await homeCards(tab);
@@ -641,7 +655,7 @@ async function copyScreens(browser, base) {
   await tab.until("document.querySelector('.versus')");
   await checkScreen(tab, '22-already-here');
   await tab.tap('Weka kama nakala mpya');
-  await tab.until("document.querySelector('.page.event')");
+  await tab.until(LIST);
   assert.match(await tab.text(), /Orodha imefunguliwa\./);
   assert.equal((await totals(tab)).Zimelipwa, 'TZS 60,000');
   assert.equal(await tab.js("document.querySelector('main img')"), null);
@@ -663,7 +677,7 @@ async function copyScreens(browser, base) {
   assert.match(await tab.text(), /Una uhakika\? Faili litachukua nafasi ya orodha iliyopo\./);
   await checkScreen(tab, '23-replace-twice');
   await tab.tap('Ndiyo, badilisha');
-  await tab.until("document.querySelector('.page.event')");
+  await tab.until(LIST);
   assert.equal(await tab.js('location.hash'), eventHash, 'the replaced list kept its place');
   assert.equal((await totals(tab)).Zimelipwa, 'TZS 60,000');
   assert.match(await tab.text(), /Nakala ya mwisho/);
@@ -685,7 +699,7 @@ async function copyScreens(browser, base) {
   assert.equal(await phone2.js("document.querySelector('.versus')"), null);
   await checkScreen(phone2, '24-new-phone-preview');
   await phone2.tap('Fungua orodha hii');
-  await phone2.until("document.querySelector('.page.event')");
+  await phone2.until(LIST);
   assert.deepEqual(await totals(phone2), { Ahadi: 'TZS 151,000', Zimelipwa: 'TZS 60,000', Bado: 'TZS 91,000' });
   assert.equal(await phone2.js('location.hash'), eventHash);
   assert.equal(await phone2.js(`[...document.querySelectorAll('.row-name')].some((e) => e.textContent === ${JSON.stringify(XSS_NAME)})`), true);
@@ -703,13 +717,164 @@ async function copyScreens(browser, base) {
   rmSync(downloads, { recursive: true, force: true });
 }
 
+// ---------- one page, panels over it: nobody gets lost ----------
+
+async function movingAround(browser, base) {
+  const step = (text) => console.log(`  ${text}`);
+  const tab = await openTab(browser, 390);
+  const back = async () => {
+    await tab.js('history.back()');
+  };
+  const at = () => tab.js('location.hash');
+  const HOME = "(document.querySelector('.page.home') && !document.querySelector('.sheet'))";
+  const makeList = async (name) => {
+    await tab.tap('Anza mchango mpya');
+    await tab.until(`document.querySelector('form') && ${PANEL}`);
+    await tab.type('Jina la mchango', name);
+    await tab.tap('Hifadhi');
+    await tab.until(LIST);
+    return at();
+  };
+  await tab.goto(base);
+  const first = await makeList('Harusi ya Zawadi');
+
+  step('a form is a panel over the page: the name and the sums stay in sight, the page under it cannot be used');
+  await tab.tap('Ongeza mtu');
+  await tab.until(PANEL);
+  assert.equal(await at(), first + '/add');
+  assert.equal(await tab.js("document.querySelector('.sheet h2').textContent"), 'Ongeza mtu');
+  assert.equal(await tab.js("document.querySelector('.sheet-top .hint').textContent"), 'Harusi ya Zawadi', 'the panel does not say which contribution it belongs to');
+  assert.equal(await tab.js("document.querySelector('.sheet').getAttribute('aria-modal') + ' ' + document.querySelector('.sheet').getAttribute('aria-labelledby')"), 'true sheet-title');
+  assert.equal(await tab.js("document.activeElement === document.querySelector('.sheet')"), true, 'the panel did not take the focus');
+  assert.equal(await tab.js("document.querySelector('main[inert] h1').textContent"), 'Harusi ya Zawadi');
+  assert.equal(await tab.js("document.querySelector('main[inert] .tabs') !== null && document.querySelector('main[inert] .totals') !== null"), true);
+  assert.equal(await tab.js("document.querySelectorAll('.sheet').length"), 1);
+  await tab.until("Math.round(document.querySelector('.sheet').getBoundingClientRect().bottom) === window.innerHeight", 'the panel has come to rest at the bottom of the phone screen');
+  const box = await tab.js("(() => { const r = document.querySelector('.sheet').getBoundingClientRect(); return [Math.round(r.left), Math.round(r.width), Math.round(r.top) >= 0]; })()");
+  assert.deepEqual(box, [0, 390, true], 'the panel does not span the phone screen');
+
+  step('"Funga" puts the same page back; the phone Back button then leaves the list, it does not reopen the form');
+  await tab.tap('Funga');
+  await tab.until(LIST);
+  assert.equal(await at(), first);
+  await back();
+  await tab.until(HOME);
+  await tab.js('history.forward()');
+  await tab.until(LIST);
+
+  step('the phone Back button closes an open panel and nothing else');
+  await tab.tap('Weka malipo');
+  await tab.until(PANEL);
+  await back();
+  await tab.until(LIST);
+  assert.equal(await at(), first);
+
+  step('"Hifadhi" closes the panel; Back does not go through the filled form again');
+  await tab.tap('Ongeza mtu');
+  await tab.until(PANEL);
+  await tab.type('Jina', 'Furaha Amani');
+  await tab.type('Ahadi, TZS', '100,000');
+  await tab.tap('Hifadhi');
+  await tab.until(`${LIST} && document.querySelector('.note.ok')`);
+  assert.equal(await at(), first);
+  await back();
+  await tab.until(HOME);
+  await tab.js('history.forward()');
+  await tab.until(LIST);
+
+  step('one panel at a time: a payment from a person takes the place of that person, and saving lands on the page');
+  await tab.js("document.querySelector('.row').click()");
+  await tab.until(`${PANEL} && document.querySelector('.sheet h2').textContent === 'Furaha Amani'`);
+  await tab.tap('Weka malipo');
+  await tab.until("document.querySelector('.sheet #who')");
+  assert.equal(await tab.js("document.querySelectorAll('.sheet').length"), 1);
+  assert.equal(await tab.js("document.querySelector('#who').selectedOptions[0].textContent"), 'Furaha Amani');
+  await tab.type('Kiasi, TZS', '40,000');
+  await tab.tap('Thibitisha malipo');
+  await tab.until(LIST);
+  assert.equal(await at(), first);
+  assert.equal((await totals(tab)).Zimelipwa, 'TZS 40,000');
+  await back();
+  await tab.until(HOME);
+  await tab.js('history.forward()');
+  await tab.until(LIST);
+
+  step('the three places at the bottom change the page in place: Back still leaves the list in one step');
+  for (const [place, tail, mark] of [['Sambaza', '/share', '.bubble'], ['Nakala', '/backup', '.pane .lead'], ['Watu', '', '.totals'], ['Sambaza', '/share', '.bubble']]) {
+    await tab.tap(place);
+    await tab.until(`document.querySelector(${JSON.stringify(mark)}) && document.querySelector('.tabs [aria-current]').textContent === ${JSON.stringify(place)}`);
+    assert.equal(await at(), first + tail);
+    assert.equal(await tab.js("document.querySelector('.page.event h1').textContent"), 'Harusi ya Zawadi');
+    assert.equal(await tab.js("document.querySelectorAll('.tabs a').length"), 3);
+  }
+  step('a panel opened from another place closes back onto that place');
+  await tab.tap('Zaidi');
+  await tab.until(`${PANEL} && document.querySelector('.danger')`);
+  assert.equal(await tab.js("document.querySelector('main[inert] .bubble') !== null"), true, 'the page under the panel changed');
+  await tab.tap('Funga');
+  await tab.until(`${LIST} && document.querySelector('.bubble')`);
+  assert.equal(await at(), first + '/share');
+  await back();
+  await tab.until(HOME);
+
+  step('one list on the phone: opening the bare address starts inside it; "Michango yote" is the way out');
+  await tab.goto(base);
+  await tab.until(LIST);
+  assert.equal(await at(), first);
+  await tab.tap('‹ Michango yote');
+  await tab.until(HOME);
+  assert.match(await tab.text(), /Michango yote/);
+
+  step('a second list: now the bare address shows the list of lists');
+  const second = await makeList('Msiba wa Faraja');
+  assert.notEqual(second, first);
+  await back(); // the new list took the form's place, so one step back is the list of lists
+  await tab.until(HOME);
+  await tab.goto(base);
+  await tab.until(HOME);
+  assert.equal((await homeCards(tab)).length, 2);
+
+  step('opened straight at a form (a reload, a saved address): "Funga" still lands on its page');
+  await tab.goto(base + first + '/pay');
+  await tab.until(PANEL);
+  await tab.js('location.reload()');
+  await tab.until(`document.readyState === 'complete' && ${PANEL}`);
+  await tab.tap('Funga');
+  await tab.until(LIST);
+  assert.equal(await at(), first);
+
+  step('a long list keeps its place when a panel opens and closes');
+  await tab.tap('Ongeza mtu');
+  await tab.until(PANEL);
+  await tab.js("document.querySelector('.quick').open = true");
+  await tab.type('Mstari mmoja kwa kila mtu: jina, kisha ahadi', Array.from({ length: 30 }, (_, i) => `Amani Zawadi ${i + 1} 10,000`).join('\n'));
+  await tab.tap('Ongeza wote');
+  await tab.until("document.querySelector('.sheet .note.ok')");
+  await tab.tap('Funga');
+  await tab.until(LIST);
+  await tab.js('window.scrollTo(0, 900)');
+  const down = await tab.js('window.scrollY');
+  assert.equal(down > 500, true);
+  await tab.js("[...document.querySelectorAll('.row')].at(-1).click()");
+  await tab.until(PANEL);
+  assert.equal(await tab.js('window.scrollY'), down);
+  await checkScreen(tab, '28-panel-over-long-list');
+  await tab.tap('Funga');
+  await tab.until(LIST);
+  assert.equal(await tab.js('window.scrollY'), down);
+
+  assert.deepEqual(tab.errors, []);
+  assert.deepEqual(tab.failures, []);
+  await tab.close();
+}
+
 // ---------- no network at all, and a new version ----------
 
 /** A copy of the project as the next version, with one visible change in the SMS reader. */
 function nextVersion(dir) {
   cpSync(ROOT, dir, { recursive: true, filter: (src) => !/\/(\.git|node_modules|tests)(\/|$)/.test(src) });
   for (const name of readdirSync(dir).filter((n) => /\.(js|html|css|webmanifest)$/.test(n))) {
-    let text = readFileSync(join(dir, name), 'utf8').replaceAll('1.0.0', '1.0.1');
+    let text = readFileSync(join(dir, name), 'utf8').replaceAll('1.1.0', '1.1.1');
     if (name === 'parse.js') {
       const old = "if (OUTGOING.test(t)) return refuse('outgoing');";
       assert.equal(text.includes(old), true);
@@ -738,9 +903,9 @@ async function offlineAndUpdate(browser) {
   await tab.until("document.querySelector('form')");
   await tab.type('Jina la mchango', 'Msiba wa Faraja');
   await tab.tap('Hifadhi');
-  await tab.until("document.querySelector('.page.event')");
+  await tab.until(LIST);
   const eventHash = await tab.js('location.hash');
-  assert.equal(await tab.js('document.documentElement.dataset.version'), '1.0.0');
+  assert.equal(await tab.js('document.documentElement.dataset.version'), '1.1.0');
   assert.match(await outgoing(), /pesa iliyotoka/);
 
   step('version 2 is published: the page says so and waits for the tap, a form being filled is left alone');
@@ -748,33 +913,37 @@ async function offlineAndUpdate(browser) {
   await tab.type('Kiasi, TZS', '7,000');
   await tab.js('navigator.serviceWorker.getRegistration().then((r) => r.update()).then(() => 1)');
   await tab.until("document.querySelector('.update')", 'the new-version notice');
-  assert.match(await tab.js("document.querySelector('.update').textContent"), /Toleo jipya lipo/);
-  assert.equal(await tab.js('document.documentElement.dataset.version'), '1.0.0');
+  assert.match(await tab.js("document.querySelector('.sheet .update').textContent"), /Toleo jipya lipo/, 'the notice is not in the open panel, where it can be seen and tapped');
+  assert.equal(await tab.js('document.documentElement.dataset.version'), '1.1.0');
   assert.equal(await tab.js("document.querySelector('#who') !== null && [...document.querySelectorAll('input')].some((i) => i.value === '7,000')"), true, 'the notice wiped the form');
   await checkScreen(tab, '25-new-version');
 
   step('"Fungua upya": the new SMS reader runs, the list is still there, the old files are gone');
   await tab.tap('Fungua upya');
-  await tab.until("document.documentElement.dataset.version === '1.0.1' && document.querySelector('#app main')", 'the page reopened as version 2');
+  await tab.until("document.documentElement.dataset.version === '1.1.1' && document.querySelector('#app main')", 'the page reopened as version 2');
   assert.match(await outgoing(), /kulipa deni/);
   assert.equal(await tab.js("document.querySelector('.update')"), null);
   const kept = await tab.js('caches.keys()');
-  assert.equal(kept.length === 1 && kept[0].endsWith(' 1.0.1'), true, 'files kept: ' + kept.join(' | '));
+  assert.equal(kept.length === 1 && kept[0].endsWith(' 1.1.1'), true, 'files kept: ' + kept.join(' | '));
 
   step('the server is switched off altogether: the page still opens, and still saves');
   shop.server.closeAllConnections();
   await new Promise((r) => shop.server.close(r));
   await tab.goto(shop.url + eventHash);
-  await tab.until("document.querySelector('.page.event')");
+  await tab.until(LIST);
   assert.match(await tab.text(), /Msiba wa Faraja/);
-  assert.equal(await tab.js('document.documentElement.dataset.version'), '1.0.1');
+  assert.equal(await tab.js('document.documentElement.dataset.version'), '1.1.1');
   await tab.tap('Ongeza mtu');
   await tab.until("document.querySelector('.quick')");
   await tab.type('Jina', 'Tumaini Amani');
   await tab.type('Ahadi, TZS', '20,000');
   await tab.tap('Hifadhi');
-  await tab.until("document.querySelector('.people')");
-  await tab.goto(shop.url); // the home page too, with no server
+  await tab.until(`${LIST} && document.querySelector('.people')`);
+  await tab.goto(shop.url); // the bare address too, with no server: one list on the phone, so it opens inside it
+  await tab.until(LIST);
+  assert.equal(await tab.js('location.hash'), eventHash);
+  await tab.tap('‹ Michango yote');
+  await tab.until("document.querySelector('.page.home')");
   assert.deepEqual(await homeCards(tab), ['Msiba wa Faraja | Zimelipwa 0 / Ahadi 20,000']);
   assert.deepEqual(tab.errors, []);
   await tab.close();
@@ -882,6 +1051,9 @@ try {
 
   console.log('save a copy, open a copy');
   await copyScreens(browser, site.url);
+
+  console.log('one page with panels over it: where you are, and where Back goes');
+  await movingAround(browser, site.url);
 
   if (!LIVE) {
     console.log('version 1, then version 2, then no server at all');

@@ -1,4 +1,5 @@
-/* Mchango ya tov — phone first (390 px), two columns from 900 px. System fonts only. */
+/* Mchango ya tov — phone first (390 px), two columns from 900 px. System fonts only.
+   One page stays on the screen; its three places sit at the bottom; forms are panels over it. */
 :root {
   --c: #6B4423; --deep: #4A2E15; --ink: #1F1510; --ground: #FAF6F1; --soft: #EFE2D3;
   --line: #E1D5C7; --muted: #6B5A4C; --ok: #166A31; --ok-bg: #E6F4EA;
@@ -13,15 +14,23 @@ body {
 }
 .num { font-variant-numeric: tabular-nums; }
 :focus-visible { outline: 3px solid #C9A27A; outline-offset: 2px; }
-h1, h2, p, ul { margin: 0; }
+h1, h2, h3, p, ul { margin: 0; }
+body.locked { overflow: hidden; }
 ul { padding: 0; list-style: none; }
 h1 { font-size: 28px; line-height: 1.15; font-weight: 800; color: var(--deep); overflow-wrap: anywhere; flex: 1; min-width: 0; }
 h1.small { font-size: 21px; }
 h2 { font-size: 19px; line-height: 1.2; }
+h3 { font-size: 17px; line-height: 1.3; }
 
 #app { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
 .page { display: flex; flex-direction: column; gap: 16px; padding: 12px 0 32px; max-width: 640px; margin: 0 auto; }
-.page.event { max-width: none; padding-bottom: 104px; }
+.page.event { padding-bottom: 88px; }
+.page.event.at-people { max-width: none; padding-bottom: 164px; }
+.event h1 { font-size: 24px; }
+.crumbs { justify-content: space-between; }
+.notes, .pane { display: flex; flex-direction: column; gap: 12px; }
+.notes:empty { display: none; }
+.pane { gap: 16px; }
 .top { display: flex; align-items: center; gap: 8px; min-height: 48px; flex-wrap: wrap; }
 .back {
   display: inline-flex; align-items: center; min-height: 48px; min-width: 48px; padding: 0 12px 0 4px;
@@ -94,14 +103,42 @@ summary { min-height: 48px; display: flex; align-items: center; font-weight: 700
   position: fixed; top: 0; left: 0; right: 0; z-index: 2; display: flex; justify-content: space-between; gap: 12px;
   padding: 10px 16px; background: var(--deep); color: #fff; font-weight: 700; flex-wrap: wrap;
 }
+.bar { display: flex; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; padding: 10px 16px; background: var(--deep); color: #fff; font-weight: 700; border-radius: var(--r); }
 .layout { display: flex; flex-direction: column; gap: 16px; }
 .col-side, .col-people { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .actions {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; gap: 8px;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--ground); border-top: 1px solid var(--line);
+  position: fixed; left: 0; right: 0; bottom: calc(57px + env(safe-area-inset-bottom)); z-index: 2; display: flex; gap: 8px;
+  padding: 10px 16px; background: var(--ground); border-top: 1px solid var(--line);
 }
 .actions .btn { flex: 1; min-height: 52px; padding: 0 6px; font-size: 16px; white-space: nowrap; }
 .actions .btn.primary { flex: 1.4; }
+
+/* the three places of one contribution */
+.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; display: flex; background: #fff;
+  border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom);
+}
+.tab {
+  flex: 1; min-height: 56px; display: flex; align-items: center; justify-content: center; gap: 6px;
+  border-top: 3px solid transparent; color: var(--muted); font-weight: 700; text-decoration: none;
+}
+.tab.on { color: var(--deep); background: var(--soft); border-top-color: var(--deep); }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--err); }
+
+/* a panel over the page */
+.veil { position: fixed; inset: 0; z-index: 5; display: flex; align-items: flex-end; justify-content: center; background: rgba(31, 21, 16, .6); }
+.sheet {
+  display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 640px; max-height: 92vh; max-height: 92dvh;
+  overflow-y: auto; overscroll-behavior: contain; background: var(--ground); border-radius: 20px 20px 0 0;
+  padding: 0 16px calc(24px + env(safe-area-inset-bottom));
+}
+.sheet:focus { outline: none; }
+.sheet-top {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 12px 0 8px;
+  background: var(--ground); border-bottom: 1px solid var(--line);
+}
+.sheet-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sheet-top h2 { font-size: 21px; color: var(--deep); }
 
 .pays li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: #fff; border: 1px solid var(--line); border-radius: var(--r); }
 .pays li.greyed { background: var(--soft); }
@@ -132,6 +169,14 @@ legend { font-weight: 700; padding: 0; margin-bottom: 4px; }
   .actions { position: static; padding: 0; border: 0; background: none; flex-direction: column; }
   .actions .btn { flex: none; }
   .slim { display: none; }
-  .page.event { padding-bottom: 32px; }
+  .page.event.at-people { padding-bottom: 88px; }
 }
-@media (prefers-reduced-motion: no-preference) { .btn { transition: background-color .12s; } }
+@media (min-width: 700px) {
+  .veil { align-items: center; }
+  .sheet { border-radius: 20px; max-height: 88vh; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .btn { transition: background-color .12s; }
+  .sheet.in { animation: rise .18s ease-out; }
+  @keyframes rise { from { transform: translateY(32px); opacity: 0; } }
+}

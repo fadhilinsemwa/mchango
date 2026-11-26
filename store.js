@@ -1,8 +1,8 @@
 // store.js — the list itself: the arithmetic (pure, tested with node) and the
 // saving on this phone (IndexedDB). Nothing here talks to a server.
 
-import { MAX_AMOUNT, MAX_NAME, eatIso, normPhone } from './parse.js?v=1.0.0';
-import { withNewIds } from './backup.js?v=1.0.0';
+import { MAX_AMOUNT, MAX_NAME, eatIso, normPhone } from './parse.js?v=1.1.0';
+import { withNewIds } from './backup.js?v=1.1.0';
 
 // ---------- arithmetic (pure) ----------
 

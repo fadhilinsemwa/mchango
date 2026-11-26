@@ -2,18 +2,20 @@
 // (Kiswahili first, English second); nothing is written inline.
 // Every piece of text reaches the page as text, never as HTML.
 
-import { fmt, normPhone, parseQuick, parseSms } from './parse.js?v=1.0.0';
-import * as store from './store.js?v=1.0.0';
-import { buildShare, whatsappLink } from './share.js?v=1.0.0';
-import { MAX_FILE_BYTES, backupDue, backupFileName, buildBackup, checkBackup, nameWith } from './backup.js?v=1.0.0';
+import { fmt, normPhone, parseQuick, parseSms } from './parse.js?v=1.1.0';
+import * as store from './store.js?v=1.1.0';
+import { buildShare, whatsappLink } from './share.js?v=1.1.0';
+import { MAX_FILE_BYTES, backupDue, backupFileName, buildBackup, checkBackup, nameWith } from './backup.js?v=1.1.0';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 // key: [Kiswahili, English]
 export const t = {
   appTitle: ['Mchango ya tov', 'Mchango by tov'],
   langSwitch: ['English', 'Kiswahili'],
-  myLists: ['Orodha zangu', 'My lists'],
+  allLists: ['Michango yote', 'All lists'],
+  close: ['Funga', 'Close'],
+  tabBackup: ['Nakala', 'Copy'],
   intro: [
     'Andika ahadi na malipo ya mchango wako, kisha tuma orodha safi kwenye kundi la WhatsApp.',
     'Write down the pledges and payments of your contribution, then send a clean list to the WhatsApp group.',
@@ -44,7 +46,6 @@ export const t = {
   eventNameHint: ['Mfano: Harusi ya Zawadi na Tumaini', 'Example: Wedding of Zawadi and Tumaini'],
   targetLabel: ['Lengo, TZS (si lazima)', 'Target, TZS (optional)'],
   save: ['Hifadhi', 'Save'],
-  back: ['Rudi', 'Back'],
   more: ['Zaidi', 'More'],
   editEvent: ['Badilisha jina au lengo', 'Change the name or target'],
   target: ['Lengo', 'Target'],
@@ -308,66 +309,168 @@ const button = (label, attrs = {}) => h('button', { type: 'button', class: 'btn'
 const note = (text, kind = 'info') =>
   h('p', { class: 'note ' + kind, role: kind === 'err' ? 'alert' : 'status' }, text);
 
-// ---------- state and routing ----------
+// ---------- state and moving around ----------
+//
+// ONE page stays on the screen: the lists, or one contribution with its three places
+// (people, share, copy) at the bottom. Every form opens as a panel OVER that page and
+// closes back onto it. Each step in the browser's history remembers the address it was
+// opened from, so closing a panel steps back instead of piling up steps.
 
-const state = { storageOk: true, persistRefused: false, blocked: false, flash: null, update: null, updating: false, install: null };
-const go = (hash) => {
-  if (location.hash === hash) render();
-  else location.hash = hash;
+const state = {
+  storageOk: true, persistRefused: false, blocked: false, flash: null, update: null, updating: false, install: null,
+  last: null, // the address shown just before this one
+  behind: null, // the page on the screen (under a panel, when one is open)
 };
+const nowAt = () => (location.hash.length > 2 ? location.hash : '#/');
 const flash = (text, kind = 'ok') => {
   state.flash = { text, kind };
 };
+/** Show another address in place of this one: no new step for the Back button. */
+const swap = (hash) => {
+  history.replaceState({ from: history.state?.from ?? null }, '', hash);
+  render();
+};
+const swapTo = (e) => {
+  e.preventDefault();
+  swap(e.currentTarget.getAttribute('href'));
+};
+/** Go to a page: one step back when that is where we came from, otherwise in place. */
+let leaving = false; // one step back per panel, however many times "save" fires in a hurry
+const backTo = (hash) => {
+  if (leaving) return;
+  if (history.state?.from === hash) {
+    leaving = true;
+    history.back();
+  } else swap(hash);
+};
+/** Close the panel: back onto the page under it. */
+const shut = () => backTo(state.behind);
+
+const PAGE = /^#\/e\/([^/?]+)(?:\/(share|backup))?$/;
 
 let renderRun = 0;
 async function render() {
   const run = ++renderRun;
-  const [path, query = ''] = (location.hash.replace(/^#/, '') || '/').split('?');
+  leaving = false;
+  if (!history.state || !('from' in history.state)) history.replaceState({ from: state.last }, '');
+  const at = nowAt();
+  state.last = at;
+  const [path, query = ''] = at.slice(1).split('?');
   const parts = path.split('/').filter(Boolean);
-  const params = new URLSearchParams(query);
-  let view;
+  const list = parts[0] === 'e' && parts[1] ? '#/e/' + parts[1] : null;
+  // Which page is on the screen, and which panel (if any) is open over it.
+  let base = '#/';
+  let panelName = null;
+  if (list && (!parts[2] || parts[2] === 'share' || parts[2] === 'backup')) base = parts[2] ? `${list}/${parts[2]}` : list;
+  else if (list) {
+    base = state.behind?.startsWith(list) ? state.behind : list;
+    panelName = parts[2];
+  } else if (parts[0] === 'new' || parts[0] === 'open') {
+    base = state.behind ?? '#/';
+    panelName = parts[0];
+  }
+  let page;
+  let panel = null;
   try {
-    if (!state.storageOk || parts.length === 0) view = await homeView();
-    else if (parts[0] === 'new') view = newEventView();
-    else if (parts[0] === 'open') view = openView();
-    else if (parts[0] === 'e' && parts[1]) {
-      const data = await store.loadEvent(parts[1]);
-      if (!data) view = missingView();
-      else if (parts[2] === 'add') view = addPersonView(data);
-      else if (parts[2] === 'pay') view = payView(data, params.get('p'));
-      else if (parts[2] === 'edit') view = editEventView(data);
-      else if (parts[2] === 'share') view = shareView(data);
-      else if (parts[2] === 'backup') view = backupView(data);
-      else if (parts[2] === 'p' && parts[3]) view = personView(data, parts[3]);
-      else view = eventView(data);
-    } else view = await homeView();
+    const m = state.storageOk ? PAGE.exec(base) : null;
+    const data = m ? await store.loadEvent(m[1]) : null;
+    if (!m) page = await homeView();
+    else if (!data) page = missingView();
+    else page = eventPage(data, m[2] ?? 'people');
+    if (!state.storageOk) panel = null;
+    else if (panelName === 'new') panel = newPanel();
+    else if (panelName === 'open') panel = openPanel();
+    else if (panelName && data) panel = eventPanel(panelName, data, parts[3], new URLSearchParams(query));
   } catch (err) {
     console.error(err);
     state.storageOk = false;
-    view = await homeView();
+    page = await homeView();
+    panel = null;
   }
   if (run !== renderRun) return;
-  const root = document.getElementById('app');
-  const banner = [];
-  if (state.update) banner.push(updateBar());
-  if (state.blocked) banner.push(note(T('closeTabs'), 'warn'));
-  if (state.flash) banner.push(note(state.flash.text, state.flash.kind));
+  const keepScroll = state.behind === base ? window.scrollY : 0; // the page under a panel does not jump
+  const wasOpen = document.querySelector('.sheet') !== null;
+  state.behind = base;
+  const notes = h(
+    'div',
+    { class: 'notes' },
+    state.update && updateBar(),
+    state.blocked && note(T('closeTabs'), 'warn'),
+    state.flash && note(state.flash.text, state.flash.kind),
+  );
   state.flash = null;
-  root.replaceChildren(...banner, view);
+  const app = document.getElementById('app');
+  if (panel) {
+    page.setAttribute('inert', ''); // the page is still seen, but only the panel can be used
+    app.replaceChildren(h('div', { class: 'notes' }), page, sheet(panel, notes, !wasOpen));
+  } else app.replaceChildren(notes, page);
+  document.body.classList.toggle('locked', panel !== null);
   document.documentElement.lang = lang;
   document.title = T('appTitle');
-  window.scrollTo(0, 0);
+  window.scrollTo(0, keepScroll);
+  if (panel) app.querySelector('.sheet').focus({ preventScroll: true });
 }
 
-function topBar(title, backHash, ...right) {
+/** A panel over the page: a title, one way out ("Funga"), and the form. */
+function sheet({ title, where, body }, notes, fresh) {
   return h(
-    'header',
-    { class: 'top' },
-    backHash && h('a', { class: 'back', href: backHash, 'aria-label': T('back') }, '‹ ', T('back')),
-    h('h1', { class: backHash ? 'small' : '' }, title),
-    ...right,
+    'div',
+    { class: 'veil' },
+    h(
+      'section',
+      {
+        class: fresh ? 'sheet in' : 'sheet',
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-labelledby': 'sheet-title',
+        tabindex: '-1',
+        onkeydown: (e) => {
+          if (e.key === 'Escape') shut();
+        },
+      },
+      h(
+        'header',
+        { class: 'sheet-top' },
+        // The contribution's name stays in sight even when the panel covers the page.
+        h('div', { class: 'sheet-name' }, where && h('p', { class: 'hint' }, where), h('h2', { id: 'sheet-title' }, title)),
+        button(T('close'), { class: 'btn pill', onclick: shut }),
+      ),
+      notes,
+      ...body,
+    ),
   );
 }
+
+function eventPanel(name, data, id, params) {
+  let panel = null;
+  if (name === 'add') panel = addPanel(data);
+  else if (name === 'pay') panel = payPanel(data, params.get('p'));
+  else if (name === 'edit') panel = editPanel(data);
+  else if (name === 'p' && id) panel = personPanel(data, id);
+  return panel && { ...panel, where: data.event.name };
+}
+
+const topBar = (title, ...right) => h('header', { class: 'top' }, h('h1', null, title), ...right);
+/** The one way from a contribution to the list of all of them. */
+const crumbs = (...right) =>
+  h(
+    'header',
+    { class: 'top crumbs' },
+    h(
+      'a',
+      {
+        class: 'back',
+        href: '#/',
+        onclick: (e) => {
+          e.preventDefault();
+          backTo('#/');
+        },
+      },
+      '‹ ',
+      T('allLists'),
+    ),
+    ...right,
+  );
 
 // ---------- screen 1: my lists ----------
 
@@ -382,7 +485,7 @@ async function homeView() {
       render();
     },
   });
-  const page = h('main', { class: 'page home' }, topBar(T('appTitle'), null, langBtn));
+  const page = h('main', { class: 'page home' }, topBar(T('appTitle'), langBtn));
   if (!state.storageOk) {
     page.append(note(T('noStorage'), 'err'));
     return page;
@@ -398,7 +501,7 @@ async function homeView() {
     );
   } else {
     page.append(
-      h('h2', null, T('myLists')),
+      h('h2', null, T('allLists')),
       h(
         'ul',
         { class: 'cards' },
@@ -440,7 +543,7 @@ async function homeView() {
 }
 
 function missingView() {
-  return h('main', { class: 'page' }, topBar(T('appTitle'), '#/'), note(T('notFound'), 'warn'));
+  return h('main', { class: 'page' }, crumbs(), topBar(T('appTitle')), note(T('notFound'), 'warn'));
 }
 
 // ---------- new list, and changing its name or target ----------
@@ -464,20 +567,15 @@ function eventForm(event, onSaved) {
   return form;
 }
 
-function newEventView() {
-  return h(
-    'main',
-    { class: 'page' },
-    topBar(T('startNew'), '#/'),
-    eventForm(null, async (fields) => {
-      const event = await store.createEvent(fields);
-      go('#/e/' + event.id);
-    }),
-  );
+function newPanel() {
+  const form = eventForm(null, async (fields) => {
+    const event = await store.createEvent(fields);
+    swap('#/e/' + event.id); // the new list takes the form's place: Back does not return to the form
+  });
+  return { title: T('startNew'), body: [form] };
 }
 
-function editEventView({ event }) {
-  const home = '#/e/' + event.id;
+function editPanel({ event }) {
   const zone = h('div', { class: 'danger' });
   const step0 = () =>
     zone.replaceChildren(button(T('deleteList'), { class: 'btn danger-btn block', onclick: step1 }));
@@ -496,23 +594,18 @@ function editEventView({ event }) {
           e.currentTarget.disabled = true;
           await store.deleteEvent(event.id);
           flash(T('deleted'));
-          go('#/');
+          swap('#/');
         },
       }),
       button(T('deleteNo'), { class: 'btn block', onclick: step0 }),
     );
   step0();
-  return h(
-    'main',
-    { class: 'page' },
-    topBar(T('editEvent'), home),
-    eventForm(event, async (fields) => {
-      await store.updateEvent(event.id, fields);
-      flash(T('saved'));
-      go(home);
-    }),
-    zone,
-  );
+  const form = eventForm(event, async (fields) => {
+    await store.updateEvent(event.id, fields);
+    flash(T('saved'));
+    shut();
+  });
+  return { title: T('editEvent'), body: [form, zone] };
 }
 
 // ---------- screen 2: one contribution ----------
@@ -541,9 +634,44 @@ function personRow(eventId, row) {
   );
 }
 
-function eventView({ event, people, payments }) {
+/** One contribution: its name on top, its three places at the bottom, one of them shown. */
+function eventPage(data, tab) {
+  const { event, people, payments } = data;
   const base = '#/e/' + event.id;
   const sums = store.summarise(people, payments);
+  const due = backupDue(event, Date.now());
+  const place = (key, hash, label, dot) =>
+    h(
+      'a',
+      { class: key === tab ? 'tab on' : 'tab', href: hash, 'aria-current': key === tab ? 'page' : null, onclick: swapTo },
+      label,
+      dot && h('span', { class: 'dot' }),
+    );
+  return h(
+    'main',
+    { class: 'page event at-' + tab },
+    crumbs(h('a', { class: 'btn pill', href: base + '/edit' }, T('more'))),
+    h('header', { class: 'top' }, h('h1', null, event.name)),
+    tab !== 'people' &&
+      h(
+        'div',
+        { class: 'bar' },
+        h('span', { class: 'num' }, `${T('paidIn')} ${tzs(sums.paid)}`),
+        h('span', { class: 'num' }, `${T('owed')} ${tzs(sums.owed)}`),
+      ),
+    tab === 'share' ? shareBody(data) : tab === 'backup' ? backupBody(data) : peopleBody(data, sums, due),
+    h(
+      'nav',
+      { class: 'tabs', 'aria-label': event.name },
+      place('people', base, T('people')),
+      place('share', base + '/share', T('share')),
+      place('backup', base + '/backup', T('tabBackup'), due !== null),
+    ),
+  );
+}
+
+function peopleBody({ event, people }, sums, due) {
+  const base = '#/e/' + event.id;
   const gone = people.filter((p) => p.removed);
 
   const totals = h(
@@ -567,7 +695,6 @@ function eventView({ event, people, payments }) {
     }).observe(totals);
   }
 
-  const due = backupDue(event, Date.now());
   const last = event.lastBackupAt ? when(event.lastBackupAt) : '';
   const copyLine = h(
     'div',
@@ -575,7 +702,7 @@ function eventView({ event, people, payments }) {
     due
       ? note(T('due_' + due, { n: event.changesSinceBackup, when: last }), 'warn')
       : h('p', { class: 'hint' }, last ? T('lastBackup', { when: last }) : T('neverBackedUp')),
-    h('a', { class: 'btn quiet', href: base + '/backup' }, T('backup')),
+    h('a', { class: 'btn quiet', href: base + '/backup', onclick: swapTo }, T('backup')),
   );
 
   const actions = h(
@@ -583,7 +710,6 @@ function eventView({ event, people, payments }) {
     { class: 'actions' },
     h('a', { class: 'btn', href: base + '/add' }, T('addPerson')),
     h('a', { class: 'btn primary', href: base + '/pay' }, T('recordPay')),
-    h('a', { class: 'btn', href: base + '/share' }, T('share')),
   );
 
   const list = h('ul', { class: 'people' }, sums.rows.map((row) => personRow(event.id, row)));
@@ -631,19 +757,13 @@ function eventView({ event, people, payments }) {
     );
   }
 
-  return h(
-    'main',
-    { class: 'page event' },
-    topBar(event.name, '#/', h('a', { class: 'btn pill', href: base + '/edit' }, T('more'))),
-    slim,
-    h('div', { class: 'layout' }, h('aside', { class: 'col-side' }, totals, copyLine, actions), peopleCol),
-  );
+  const ios = needsHomeScreen() && note(T('iosInstall'), 'warn');
+  return [slim, h('div', { class: 'layout' }, h('aside', { class: 'col-side' }, ios, totals, copyLine, actions), peopleCol)];
 }
 
 // ---------- screen 3: add people ----------
 
-function addPersonView({ event, people }) {
-  const home = '#/e/' + event.id;
+function addPanel({ event, people }) {
   const name = field(T('name'), { maxlength: 80, required: true, autocapitalize: 'words' });
   const phone = field(T('phone'), { type: 'tel', inputmode: 'tel' });
   const pledge = field(T('pledge'), { inputmode: 'numeric', required: true });
@@ -668,7 +788,7 @@ function addPersonView({ event, people }) {
     await store.addPeople(event.id, [{ name: name.input.value, phone: typedPhone, pledge: amount }]);
     const keptOut = typedPhone !== '' && normPhone(typedPhone) === null;
     flash(keptOut ? `${T('saved')}. ${T('phoneKeptOut')}` : T('saved'), keptOut ? 'warn' : 'ok');
-    go(home);
+    shut();
   });
 
   const many = field(T('quickLabel'), { rows: 6, autocapitalize: 'words' }, T('quickHint'));
@@ -689,28 +809,21 @@ function addPersonView({ event, people }) {
             { class: 'unread' },
             unread.map((u) => h('li', null, h('span', { class: 'chip st-bad' }, T('unread')), ' ', u.line)),
           ),
-        h('a', { class: 'btn block', href: home }, T('back')),
+        button(T('close'), { class: 'btn block', onclick: shut }),
       );
       many.input.value = unread.map((u) => u.line).join('\n');
     },
   });
 
-  return h(
-    'main',
-    { class: 'page' },
-    topBar(T('addPerson'), home),
-    form,
-    h('details', { class: 'quick' }, h('summary', null, T('quickMode')), many.row, addAll, result),
-  );
+  const quick = h('details', { class: 'quick' }, h('summary', null, T('quickMode')), many.row, addAll, result);
+  return { title: T('addPerson'), body: [form, quick] };
 }
 
 // ---------- one person ----------
 
-function personView({ event, people, payments }, personId) {
+function personPanel({ event, people, payments }, personId) {
   const person = people.find((p) => p.id === personId);
-  if (!person) return missingView();
-  const home = '#/e/' + event.id;
-  const here = `${home}/p/${person.id}`;
+  if (!person) return null;
   const mine = payments.filter((p) => p.personId === person.id).sort((a, b) => b.paidAt.localeCompare(a.paidAt));
 
   const name = field(T('name'), { value: person.name, maxlength: 80, required: true });
@@ -730,7 +843,7 @@ function personView({ event, people, payments }, personId) {
     await store.updatePerson(person.id, { name: name.input.value, phone: typedPhone, pledge: amount });
     const keptOut = typedPhone !== '' && normPhone(typedPhone) === null;
     flash(keptOut ? `${T('saved')}. ${T('phoneKeptOut')}` : T('saved'), keptOut ? 'warn' : 'ok');
-    go(here);
+    shut();
   });
 
   const payList =
@@ -758,37 +871,39 @@ function personView({ event, people, payments }, personId) {
                     const owner = people.find((p) => p.id === verdict.dup.personId);
                     flash(T('duplicate', { name: owner?.name ?? '', when: when(verdict.dup.paidAt) }), 'err');
                   }
-                  go(here);
+                  render(); // the panel stays: the payment is seen changing
                 },
               }),
             ),
           ),
         );
 
-  return h(
-    'main',
-    { class: 'page' },
-    topBar(person.name, home),
-    person.removed && note(T('removed'), 'warn'),
-    !person.removed && h('a', { class: 'btn primary block', href: `${home}/pay?p=${person.id}` }, T('recordPay')),
-    h('h2', null, T('payments')),
-    payList,
-    form,
-    button(person.removed ? T('restorePerson') : T('removePerson'), {
-      class: 'btn block quiet',
-      onclick: async (e) => {
-        e.currentTarget.disabled = true;
-        await store.updatePerson(person.id, { removed: !person.removed });
-        go(person.removed ? here : home);
-      },
-    }),
-  );
+  const toggle = button(person.removed ? T('restorePerson') : T('removePerson'), {
+    class: 'btn block quiet',
+    onclick: async (e) => {
+      e.currentTarget.disabled = true;
+      await store.updatePerson(person.id, { removed: !person.removed });
+      if (person.removed) render();
+      else shut();
+    },
+  });
+  return {
+    title: person.name,
+    body: [
+      person.removed && note(T('removed'), 'warn'),
+      // One panel at a time: the payment form takes this panel's place.
+      !person.removed && h('a', { class: 'btn primary block', href: `#/e/${event.id}/pay?p=${person.id}`, onclick: swapTo }, T('recordPay')),
+      h('h2', null, T('payments')),
+      payList,
+      form,
+      toggle,
+    ],
+  };
 }
 
 // ---------- screen 4: record a payment ----------
 
-function payView({ event, people, payments }, presetPersonId) {
-  const home = '#/e/' + event.id;
+function payPanel({ event, people, payments }, presetPersonId) {
   const live = people.filter((p) => !p.removed).sort((a, b) => store.normName(a.name).localeCompare(store.normName(b.name)));
   // The id is made when the form opens: saving the same id twice does nothing.
   const draft = { id: crypto.randomUUID(), sms: null };
@@ -890,22 +1005,16 @@ function payView({ event, people, payments }, presetPersonId) {
       return problems.append(duplicateNote(verdict.dup));
     }
     flash(`${T('saved')}: ${tzs(value)}`);
-    go(home);
+    shut();
   });
 
-  return h(
-    'main',
-    { class: 'page' },
-    topBar(T('recordPay'), home),
-    h('section', { class: 'form' }, sms.row, h('p', { class: 'hint' }, T('smsNote')), readBtn, smsResult),
-    form,
-  );
+  const paste = h('section', { class: 'form' }, sms.row, h('p', { class: 'hint' }, T('smsNote')), readBtn, smsResult);
+  return { title: T('recordPay'), body: [paste, form] };
 }
 
 // ---------- screen 5: share the list ----------
 
-function shareView(data) {
-  const home = '#/e/' + data.event.id;
+function shareBody(data) {
   const options = { who: 'paid', amounts: true };
   const radio = (value, label) => {
     const input = h('input', { type: 'radio', name: 'who', id: 'who-' + value, value });
@@ -964,9 +1073,9 @@ function shareView(data) {
   draw();
 
   return h(
-    'main',
-    { class: 'page' },
-    topBar(T('shareTitle'), home),
+    'section',
+    { class: 'pane' },
+    h('h2', null, T('shareTitle')),
     h(
       'fieldset',
       { class: 'choices' },
@@ -976,16 +1085,15 @@ function shareView(data) {
     ),
     warning,
     h('label', { class: 'choice', for: 'with-amounts' }, amounts, h('span', null, T('withAmounts'))),
-    h('h2', null, T('preview')),
+    h('h3', null, T('preview')),
     out,
   );
 }
 
 // ---------- screen 6: save a copy, open a copy ----------
 
-function backupView(data) {
+function backupBody(data) {
   const { event } = data;
-  const here = `#/e/${event.id}/backup`;
   const make = () => {
     const now = Date.now();
     return new File([JSON.stringify(buildBackup(data, now))], backupFileName(event, now), { type: 'text/plain' });
@@ -993,7 +1101,7 @@ function backupView(data) {
   const saved = async () => {
     await store.markBackedUp(event.id, Date.now());
     flash(T('backupDone'));
-    go(here);
+    render();
   };
   let canSend = false;
   try {
@@ -1024,9 +1132,9 @@ function backupView(data) {
     },
   });
   return h(
-    'main',
-    { class: 'page' },
-    topBar(T('backup'), '#/e/' + event.id),
+    'section',
+    { class: 'pane' },
+    h('h2', null, T('backup')),
     h('p', { class: 'lead' }, T('backupWhy')),
     h('p', { class: 'fact' }, event.lastBackupAt ? T('lastBackup', { when: when(event.lastBackupAt) }) : T('neverBackedUp')),
     note(T('backupPrivacy'), 'warn'),
@@ -1038,7 +1146,7 @@ function backupView(data) {
   );
 }
 
-function openView() {
+function openPanel() {
   // The browser's own file button speaks the phone's language, not the page's:
   // it is kept out of sight and our own button opens it.
   const input = h('input', { type: 'file', id: 'copy-file', accept: '.txt,text/plain', hidden: true });
@@ -1074,7 +1182,7 @@ function openView() {
     if (!got.ok) return out.append(note(T('importRefused', { why: T('imp_' + got.reason) }), 'err'));
     out.append(...(await previewOf(got.data)));
   });
-  return h('main', { class: 'page' }, topBar(T('openBackup'), '#/'), pick, input, h('p', { class: 'hint' }, T('openHint')), out);
+  return { title: T('openBackup'), body: [pick, input, h('p', { class: 'hint' }, T('openHint')), out] };
 }
 
 /** What the file holds, shown BEFORE anything is put on the phone. */
@@ -1085,7 +1193,7 @@ async function previewOf(data) {
   const mine = await store.loadEvent(data.event.id);
   const opened = (id) => {
     flash(T('imported'));
-    go('#/e/' + id);
+    swap('#/e/' + id); // the list takes the panel's place
   };
   const facts = h(
     'section',
@@ -1199,7 +1307,7 @@ async function watchVersion() {
       if (!reg.waiting || !sw.controller || state.update) return;
       state.update = reg;
       // Added on top of the screen as it is: a form being filled is left alone.
-      document.getElementById('app').prepend(updateBar());
+      (document.querySelector('.sheet .notes') ?? document.querySelector('#app > .notes'))?.prepend(updateBar());
     };
     check();
     reg.addEventListener('updatefound', () => reg.installing?.addEventListener('statechange', check));
@@ -1235,11 +1343,18 @@ async function boot() {
       state.persistRefused = kept === false;
     } catch {}
   }
+  // Someone with one list (most people) starts inside it, not on the list of lists.
+  if (state.storageOk && location.hash.length <= 2) {
+    try {
+      const lists = await store.listEvents();
+      if (lists.length === 1) history.replaceState({ from: null }, '', '#/e/' + lists[0].event.id);
+    } catch {}
+  }
   window.addEventListener('hashchange', render);
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     state.install = e;
-    if (document.querySelector('.page.home')) render();
+    if (document.querySelector('.page.home') && !document.querySelector('.sheet')) render(); // never over a form being filled
   });
   await render();
   watchVersion();
