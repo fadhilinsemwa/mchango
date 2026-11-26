@@ -100,13 +100,23 @@ summary { min-height: 48px; display: flex; align-items: center; font-weight: 700
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; gap: 8px;
   padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--ground); border-top: 1px solid var(--line);
 }
-.actions .btn { flex: 1; min-height: 52px; padding: 0 8px; }
+.actions .btn { flex: 1; min-height: 52px; padding: 0 6px; font-size: 16px; white-space: nowrap; }
 .actions .btn.primary { flex: 1.4; }
 
 .pays li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: #fff; border: 1px solid var(--line); border-radius: var(--r); }
 .pays li.greyed { background: var(--soft); }
 .pay-text { display: flex; flex-direction: column; min-width: 0; }
 .pay-amount { font-weight: 700; font-size: 19px; }
+
+.choices { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+legend { font-weight: 700; padding: 0; margin-bottom: 4px; }
+.choice { display: flex; align-items: center; gap: 12px; min-height: 48px; font-weight: 600; font-size: 17px; cursor: pointer; }
+.choice input { width: 24px; height: 24px; flex: none; accent-color: var(--deep); margin: 0; }
+.parts, .part { display: flex; flex-direction: column; gap: 12px; }
+.bubble { background: #fff; border: 1px solid var(--line); border-radius: var(--r); padding: 12px 8px; font-size: 14px; line-height: 1.45; }
+.bubble-line { overflow-wrap: anywhere; }
+.pair { display: flex; gap: 8px; }
+.pair .btn { flex: 1; }
 
 @media (min-width: 900px) {
   .layout { flex-direction: row-reverse; align-items: flex-start; gap: 32px; }

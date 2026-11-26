@@ -191,8 +191,8 @@ async function checkScreen(tab, name) {
       if (ratio < need) out.faint.push(el.textContent.trim().slice(0, 30) + " " + ratio.toFixed(2));
     }
     const seen = (el) => el.getClientRects().length > 0 && !el.closest('[hidden]');
-    for (const el of document.querySelectorAll('a, button, summary, input, select, textarea')) {
-      if (!seen(el)) continue;
+    for (const el of document.querySelectorAll('a, button, summary, input, select, textarea, label.choice')) {
+      if (!seen(el) || el.type === 'radio' || el.type === 'checkbox') continue; // their label is the target
       const r = el.getBoundingClientRect();
       const need = el.classList.contains('primary') ? 52 : 48;
       if (r.height < need - 0.5 || r.width < 48 - 0.5) out.small.push(el.tagName + ' "' + (el.textContent || el.id).trim().slice(0, 30) + '" ' + Math.round(r.width) + 'x' + Math.round(r.height));
@@ -420,6 +420,74 @@ async function wholeEvent(browser, base, width) {
   await tab.close();
 }
 
+// ---------- the text for WhatsApp ----------
+
+async function shareScreen(browser, base) {
+  const tab = await openTab(browser, 390);
+  await tab.goto(base);
+  await tab.js("navigator.share = async (data) => { window.__shared = data; }");
+  await tab.tap('Anza mchango mpya');
+  await tab.until("document.querySelector('form')");
+  await tab.type('Jina la mchango', 'Harusi ya Zawadi na Tumaini');
+  await tab.tap('Hifadhi');
+  await tab.until("document.querySelector('.page.event')");
+  const eventHash = await tab.js('location.hash');
+  await tab.tap('Ongeza mtu');
+  await tab.until("document.querySelector('.quick')");
+  await tab.js("document.querySelector('.quick').open = true");
+  // Names of exactly 20 characters, with amounts in the hundreds of thousands.
+  await tab.type('Mstari mmoja kwa kila mtu: jina, kisha ahadi', 'Zawadi Tumaini Amani 900,000\nFuraha Upendo Faraja 100,000');
+  await tab.tap('Ongeza wote');
+  await tab.until("document.querySelector('.note.ok')");
+  for (const [name, amount] of [['Zawadi Tumaini Amani', '500,000'], ['Furaha Upendo Faraja', '100,000']]) {
+    await tab.hash(eventHash + '/pay');
+    await tab.until("document.querySelector('#who')");
+    await tab.type('Kiasi, TZS', amount);
+    await tab.js(`(() => { const s = document.querySelector('#who'); s.value = [...s.options].find((o) => o.textContent === ${JSON.stringify(name)}).value; s.dispatchEvent(new Event('change')); })()`);
+    await tab.tap('Thibitisha malipo');
+    await tab.until("document.querySelector('.page.event')");
+  }
+  await tab.tap('Sambaza');
+  await tab.until("document.querySelector('.bubble')");
+  const expected = [
+    '*Harusi ya Zawadi na Tumaini*',
+    'Ahadi: TZS 1,000,000',
+    'Zimelipwa: TZS 600,000',
+    'Bado: TZS 400,000',
+    '',
+    'Waliolipa (2):',
+    '1. Zawadi Tumaini Amani — 500,000 (bado 400,000)',
+    '2. Furaha Upendo Faraja — 100,000 ✅',
+    '',
+    'Imetengenezwa bure na mchango.tov.co.tz',
+  ];
+  const shown = await tab.js("[...document.querySelectorAll('.bubble-line')].map((l) => l.textContent.replace(/\\u00a0/g, ''))");
+  assert.deepEqual(shown, expected);
+  const tall = await tab.js("(() => { const lines = [...document.querySelectorAll('.bubble-line')]; const one = Math.min(...lines.map((l) => l.getBoundingClientRect().height)); return lines.filter((l) => l.getBoundingClientRect().height > one * 1.5).map((l) => l.textContent); })()");
+  assert.deepEqual(tall, [], 'a line wraps at 390 px');
+  assert.equal(await tab.js('window.__shared'), undefined, 'the text was sent before any tap');
+  await checkScreen(tab, '15-share');
+  await tab.js("[...document.querySelectorAll('button')].find((b) => b.textContent === 'Sambaza').click()");
+  await tab.until('window.__shared');
+  assert.deepEqual(await tab.js('window.__shared'), { text: expected.join('\n') });
+  const link = await tab.js("[...document.querySelectorAll('a')].find((a) => a.textContent === 'Tuma WhatsApp').href");
+  assert.equal(new URL(link).origin, 'https://wa.me');
+  assert.equal(new URL(link).searchParams.get('text'), expected.join('\n'));
+
+  // The second choice is never the default, and comes with a warning.
+  assert.equal(await tab.js("document.querySelector('#who-paid').checked"), true);
+  assert.equal(await tab.js("document.querySelector('.note.warn').hidden"), true);
+  await tab.js("document.querySelector('#who-owing').click()");
+  assert.equal(await tab.js("document.querySelector('.note.warn').hidden"), false);
+  await tab.js("document.querySelector('#with-amounts').click()");
+  const owing = await tab.js("[...document.querySelectorAll('.bubble-line')].map((l) => l.textContent)");
+  assert.deepEqual(owing.slice(5, 7), ['Bado (1):', '1. Zawadi Tumaini Amani']);
+  await checkScreen(tab, '16-share-owing');
+  assert.deepEqual(tab.errors, []);
+  assert.equal(tab.requests.every((r) => new URL(r.url).origin === new URL(base).origin), true);
+  await tab.close();
+}
+
 // ---------- run ----------
 
 const site = await serve({ root: ROOT });
@@ -442,8 +510,11 @@ try {
   assert.equal(tab.requests.every((r) => new URL(r.url).pathname.startsWith('/mchango/')), true);
   await tab.close();
 
+  console.log('the text for WhatsApp: exact, one line per person at 390 px, never sent by itself');
+  await shareScreen(browser, site.url);
+
   console.log('first load is under 80 KB');
-  const files = ['index.html', 'style.css', 'app.js', 'store.js', 'parse.js'];
+  const files = ['index.html', 'style.css', 'app.js', 'store.js', 'parse.js', 'share.js'];
   const bytes = files.reduce((sum, f) => sum + statSync(join(ROOT, f)).size, 0);
   console.log(`  ${bytes} bytes in ${files.length} files`);
   assert.equal(bytes < 80000, true, `first load is ${bytes} bytes`);

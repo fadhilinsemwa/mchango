@@ -4,6 +4,7 @@
 
 import { fmt, normPhone, parseQuick, parseSms } from './parse.js?v=0.1.0';
 import * as store from './store.js?v=0.1.0';
+import { buildShare, whatsappLink } from './share.js?v=0.1.0';
 
 export const VERSION = '0.1.0';
 
@@ -146,6 +147,25 @@ export const t = {
   deleteYes: ['Ndiyo, futa kabisa', 'Yes, delete it for good'],
   deleteNo: ['Hapana, iache', 'No, keep it'],
   deleted: ['Orodha imefutwa.', 'The list was deleted.'],
+  share: ['Sambaza', 'Share'],
+  shareTitle: ['Sambaza orodha', 'Share the list'],
+  whoToList: ['Nani aonekane kwenye orodha?', 'Who should the list show?'],
+  optPaid: ['Jumla na waliolipa', 'Totals and those who have paid'],
+  optOwing: ['Jumla na ambao bado', 'Totals and those who still owe'],
+  owingWarn: [
+    'Orodha ya ambao bado inaweza kumwaibisha mtu kwenye kundi kubwa. Itume kwa kamati tu.',
+    'A list of who still owes can embarrass someone in a big group. Send it to the committee only.',
+  ],
+  withAmounts: ['Onyesha kiasi kwa kila jina', 'Show the amount beside each name'],
+  preview: ['Hivi ndivyo itakavyoonekana WhatsApp', 'This is how it will look on WhatsApp'],
+  paidHeader: ['Waliolipa ({n}):', 'Paid ({n}):'],
+  owingHeader: ['Bado ({n}):', 'Still owe ({n}):'],
+  stillOwes: ['bado {amount}', '{amount} to go'],
+  owesLine: ['bado {amount}', 'owes {amount}'],
+  shareFooter: ['Imetengenezwa bure na mchango.tov.co.tz', 'Made free with mchango.tov.co.tz'],
+  sendWa: ['Tuma WhatsApp', 'Send on WhatsApp'],
+  copy: ['Nakili', 'Copy'],
+  copied: ['Imenakiliwa', 'Copied'],
   notFound: ['Orodha hii haipo kwenye simu hii.', 'This list is not on this phone.'],
 };
 
@@ -220,6 +240,7 @@ async function render() {
       else if (parts[2] === 'add') view = addPersonView(data);
       else if (parts[2] === 'pay') view = payView(data, params.get('p'));
       else if (parts[2] === 'edit') view = editEventView(data);
+      else if (parts[2] === 'share') view = shareView(data);
       else if (parts[2] === 'p' && parts[3]) view = personView(data, parts[3]);
       else view = eventView(data);
     } else view = await homeView();
@@ -439,6 +460,7 @@ function eventView({ event, people, payments }) {
     { class: 'actions' },
     h('a', { class: 'btn', href: base + '/add' }, T('addPerson')),
     h('a', { class: 'btn primary', href: base + '/pay' }, T('recordPay')),
+    h('a', { class: 'btn', href: base + '/share' }, T('share')),
   );
 
   const list = h('ul', { class: 'people' }, sums.rows.map((row) => personRow(event.id, row)));
@@ -754,6 +776,85 @@ function payView({ event, people, payments }, presetPersonId) {
     topBar(T('recordPay'), home),
     h('section', { class: 'form' }, sms.row, h('p', { class: 'hint' }, T('smsNote')), readBtn, smsResult),
     form,
+  );
+}
+
+// ---------- screen 5: share the list ----------
+
+function shareView(data) {
+  const home = '#/e/' + data.event.id;
+  const options = { who: 'paid', amounts: true };
+  const radio = (value, label) => {
+    const input = h('input', { type: 'radio', name: 'who', id: 'who-' + value, value });
+    input.checked = options.who === value;
+    input.addEventListener('change', () => {
+      options.who = value;
+      draw();
+    });
+    return h('label', { class: 'choice', for: 'who-' + value }, input, h('span', null, label));
+  };
+  const amounts = h('input', { type: 'checkbox', id: 'with-amounts' });
+  amounts.checked = true;
+  amounts.addEventListener('change', () => {
+    options.amounts = amounts.checked;
+    draw();
+  });
+  const warning = note(T('owingWarn'), 'warn');
+  const out = h('div', { class: 'parts' });
+
+  function draw() {
+    warning.hidden = options.who !== 'owing';
+    out.replaceChildren(
+      ...buildShare(data, options, T).map((text) => {
+        const copyBtn = button(T('copy'), {
+          onclick: async () => {
+            try {
+              await navigator.clipboard.writeText(text);
+              copyBtn.textContent = T('copied');
+            } catch {}
+          },
+        });
+        return h(
+          'section',
+          { class: 'part' },
+          // One element per line, so the text is shown exactly as it will be sent.
+          h('div', { class: 'bubble' }, text.split('\n').map((l) => h('div', { class: 'bubble-line' }, l === '' ? '\u00a0' : l))),
+          typeof navigator.share === 'function' &&
+            button(T('share'), {
+              class: 'btn primary block',
+              onclick: async () => {
+                try {
+                  await navigator.share({ text });
+                } catch {} // cancelled: the preview and the two buttons below stay
+              },
+            }),
+          h(
+            'div',
+            { class: 'pair' },
+            h('a', { class: 'btn', href: whatsappLink(text), target: '_blank', rel: 'noopener' }, T('sendWa')),
+            copyBtn,
+          ),
+        );
+      }),
+    );
+  }
+  draw();
+
+  return h(
+    'main',
+    { class: 'page' },
+    topBar(T('shareTitle'), home),
+    h(
+      'fieldset',
+      { class: 'choices' },
+      h('legend', null, T('whoToList')),
+      radio('paid', T('optPaid')),
+      radio('owing', T('optOwing')),
+    ),
+    warning,
+    h('label', { class: 'choice', for: 'with-amounts' }, amounts, h('span', null, T('withAmounts'))),
+    h('h2', null, T('preview')),
+    out,
   );
 }
 
