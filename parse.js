@@ -110,3 +110,88 @@ export function parseQuick(text) {
   }
   return { people, unread };
 }
+
+// ---------- payment SMS ----------
+//
+// One pattern per message shape, anchored at the start, tolerant of extra spaces.
+// A message that fits no shape is never guessed. The balance sentence that ends
+// every message is not captured, so it can never be stored.
+
+const TX_ID = '([A-Z0-9]{8,12})';
+const MONEY = 'Tsh\\s?(\\d{1,3}(?:,\\d{3})*|\\d+)\\.(\\d{2})';
+const PAYER = '(\\+?255\\d{9}|0\\d{9})\\s+-\\s+(.+?)';
+const CLOCK = '(\\d{1,2})/(\\d{1,2})/(\\d{2})';
+const HOUR = '(\\d{1,2}):(\\d{2})\\s?([AaPp][Mm])(?![A-Za-z])';
+const WHEN_SW = `mnamo\\s+${CLOCK}\\s+${HOUR}`;
+const WHEN_EN = `on\\s+${CLOCK}\\s+at\\s+${HOUR}`;
+const shape = (...parts) => new RegExp('^' + parts.join('\\s+'));
+
+const SHAPES = [
+  // A business till (Lipa) being paid.
+  { shape: 'mpesa_till_in', network: 'mpesa',
+    re: shape(TX_ID, 'Imethibitishwa\\.', 'Umelipwa', MONEY, 'kutoka', 'kwa', PAYER, WHEN_SW) },
+  // A personal wallet receiving money, Kiswahili.
+  { shape: 'mpesa_personal_sw', network: 'mpesa',
+    re: shape(TX_ID, 'Imethibitishwa\\.', 'Umepokea', MONEY, 'kutoka', 'kwa', PAYER, WHEN_SW) },
+  // The personal copy, which starts with a lowercase "imethibitishwa".
+  { shape: 'mpesa_personal_copy', network: 'mpesa',
+    re: shape(TX_ID, 'imethibitishwa\\.', 'Umelipwa', MONEY, 'kutoka', 'kwa', PAYER, WHEN_SW) },
+  // A personal wallet receiving money, English.
+  { shape: 'mpesa_personal_en', network: 'mpesa',
+    re: shape(TX_ID, 'Confirmed\\.', 'You', 'have', 'received', MONEY, 'from', PAYER, WHEN_EN) },
+];
+
+// Money going out, or a loan being repaid, is never a contribution.
+const OUTGOING = /\bkimelipwa\s+kwenda\b|\bpaid\s+to\b|\bsent\s+to\b|\bumelipa\b|\bumetuma\b/i;
+const LOAN = /\bkulipa\s+deni\b/i;
+
+const refuse = (reason, found) => (found ? { ok: false, reason, found } : { ok: false, reason });
+
+// For a message we could not read: what the type-it-in form may be filled with.
+function looseFinds(t) {
+  const found = {};
+  const money = /\b(?:Tshs?|TZS)\.?\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?(?!\d)/i.exec(t);
+  if (money && (money[2] ?? '00') === '00') {
+    const amount = Number(money[1].replace(/,/g, ''));
+    if (amount >= 1 && amount <= MAX_AMOUNT) found.amount = amount;
+  }
+  const phone = /(?<!\d)(?:\+?255|0)[67]\d{8}(?!\d)/.exec(t);
+  if (phone) found.payerPhone = normPhone(phone[0]);
+  return found;
+}
+
+/**
+ * Read one pasted payment SMS.
+ * Money coming in -> { ok:true, shape, network, txId, amount, payerPhone, payerName, paidAt }.
+ * Anything else   -> { ok:false, reason } with reason one of
+ *   outgoing, loan, fraction, amount, bad_date, unknown (unknown also carries `found`).
+ */
+export function parseSms(text) {
+  if (typeof text !== 'string') return refuse('unknown', {});
+  const t = text.replace(/ /g, ' ').trim();
+  if (t === '' || t.length > 1000) return refuse('unknown', {});
+  if (OUTGOING.test(t)) return refuse('outgoing');
+  if (LOAN.test(t)) return refuse('loan');
+
+  for (const s of SHAPES) {
+    const m = s.re.exec(t);
+    if (!m) continue;
+    const [, txId, shillings, cents, phone, name, day, month, yy, hour, minute, ampm] = m;
+    if (cents !== '00') return refuse('fraction'); // never rounded
+    const amount = Number(shillings.replace(/,/g, ''));
+    if (!(amount >= 1 && amount <= MAX_AMOUNT)) return refuse('amount');
+    const paidAt = smsTimeIso(day, month, yy, hour, minute, ampm);
+    if (paidAt === null) return refuse('bad_date');
+    return {
+      ok: true,
+      shape: s.shape,
+      network: s.network,
+      txId,
+      amount,
+      payerPhone: normPhone(phone),
+      payerName: name.replace(/\s+/g, ' ').trim().slice(0, MAX_NAME),
+      paidAt,
+    };
+  }
+  return refuse('unknown', looseFinds(t));
+}

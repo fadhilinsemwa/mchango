@@ -12,6 +12,13 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 export const BREAKS = [
   {
+    name: "an SMS amount with cents is rounded instead of refused",
+    file: "parse.js",
+    find: "if (cents !== '00') return refuse('fraction'); // never rounded",
+    replace: "",
+    test: "tests/parse.test.mjs",
+  },
+  {
     name: "eatIso uses the machine's own time zone",
     file: 'parse.js',
     find: 'new Date(ms + EAT_MS)',
