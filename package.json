@@ -1,0 +1,11 @@
+{
+  "name": "mchango",
+  "private": true,
+  "type": "module",
+  "description": "A contribution list that lives on the treasurer's phone. No build step, no dependency.",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node tests/run.mjs"
+  }
+}
