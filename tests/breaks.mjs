@@ -12,6 +12,41 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 export const BREAKS = [
   {
+    name: "a transaction ID recorded twice is accepted",
+    file: "store.js",
+    find: "if (dup) return { action: 'duplicate', dup };\n  }\n  return { action: 'save' };",
+    replace: "}\n  return { action: 'save' };",
+    test: "tests/totals.test.mjs",
+  },
+  {
+    name: "what a person owes can go below zero",
+    file: "store.js",
+    find: "Math.max(person.pledge - got, 0)",
+    replace: "person.pledge - got",
+    test: "tests/totals.test.mjs",
+  },
+  {
+    name: "a removed person is still counted",
+    file: "store.js",
+    find: "if (person.removed) continue;",
+    replace: "",
+    test: "tests/totals.test.mjs",
+  },
+  {
+    name: "an undone payment is still counted",
+    file: "store.js",
+    find: "if (pay.undone) continue;",
+    replace: "",
+    test: "tests/totals.test.mjs",
+  },
+  {
+    name: "the same payment saved twice is recorded twice",
+    file: "store.js",
+    find: "if (existing.some((p) => p.id === payment.id)) return { action: 'nothing' };",
+    replace: "",
+    test: "tests/totals.test.mjs",
+  },
+  {
     name: "an SMS amount with cents is rounded instead of refused",
     file: "parse.js",
     find: "if (cents !== '00') return refuse('fraction'); // never rounded",
