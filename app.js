@@ -5,6 +5,7 @@
 import { fmt, normPhone, parseQuick, parseSms } from './parse.js?v=0.1.0';
 import * as store from './store.js?v=0.1.0';
 import { buildShare, whatsappLink } from './share.js?v=0.1.0';
+import { MAX_FILE_BYTES, backupDue, backupFileName, buildBackup, checkBackup, nameWith } from './backup.js?v=0.1.0';
 
 export const VERSION = '0.1.0';
 
@@ -167,6 +168,96 @@ export const t = {
   copy: ['Nakili', 'Copy'],
   copied: ['Imenakiliwa', 'Copied'],
   notFound: ['Orodha hii haipo kwenye simu hii.', 'This list is not on this phone.'],
+  backup: ['Hifadhi nakala', 'Save a copy'],
+  backupWhy: [
+    'Nakala ni faili moja lenye orodha hii yote. Ukipoteza simu, utaifungua kwenye simu nyingine.',
+    'A copy is one file that holds this whole list. If you lose the phone, you open it on another phone.',
+  ],
+  backupPrivacy: [
+    'Faili hili lina majina na namba za simu za wachangiaji. Litume kwako mwenyewe tu.',
+    'This file holds the names and phone numbers of the contributors. Send it only to yourself.',
+  ],
+  backupSend: ['Tuma nakala WhatsApp', 'Send the copy on WhatsApp'],
+  backupSendHint: [
+    'Chagua namba yako mwenyewe, ili nakala ikae nje ya simu hii.',
+    'Choose your own number, so the copy lives off this phone.',
+  ],
+  backupDownload: ['Pakua', 'Download'],
+  backupDone: ['Nakala imehifadhiwa.', 'The copy was saved.'],
+  lastBackup: ['Nakala ya mwisho: {when}', 'Last copy: {when}'],
+  neverBackedUp: ['Orodha hii bado haina nakala.', 'This list has no copy yet.'],
+  due_never: ['Orodha hii bado haina nakala. Hifadhi nakala sasa.', 'This list has no copy yet. Save a copy now.'],
+  due_changes: [
+    'Umebadilisha mara {n} tangu nakala ya mwisho ({when}). Hifadhi nakala.',
+    'You made {n} changes since the last copy ({when}). Save a copy.',
+  ],
+  due_days: [
+    'Nakala ya mwisho ni ya {when}, na orodha imebadilika mara {n} tangu hapo. Hifadhi nakala.',
+    'The last copy is from {when}, and the list changed {n} times since. Save a copy.',
+  ],
+  openBackup: ['Fungua nakala', 'Open a copy'],
+  openLabel: ['Chagua faili la nakala', 'Choose the copy file'],
+  openHint: [
+    'Jina la faili linaanza na "mchango-". Kama ulilituma WhatsApp, lihifadhi kwanza kwenye simu, kisha lichague hapa.',
+    'The name of the file starts with "mchango-". If you sent it on WhatsApp, save it to the phone first, then choose it here.',
+  ],
+  importRefused: [
+    'Faili halikufunguliwa na hakuna kilichobadilika: {why}.',
+    'The file was not opened and nothing changed: {why}.',
+  ],
+  imp_big: ['ni kubwa mno (zaidi ya MB 2)', 'it is too big (over 2 MB)'],
+  imp_parse: ['si nakala ya Mchango, au limeharibika', 'it is not a Mchango copy, or it is damaged'],
+  imp_app: ['si nakala ya Mchango', 'it is not a Mchango copy'],
+  imp_schema: [
+    'limetoka kwenye toleo jipya zaidi la Mchango; fungua upya ukurasa huu kwanza',
+    'it comes from a newer version of Mchango; reopen this page first',
+  ],
+  imp_shape: ['limekosa sehemu zake', 'parts of it are missing'],
+  imp_ids: ['lina kitu kimoja mara mbili', 'something in it appears twice'],
+  imp_ref: [
+    'lina mtu au malipo yasiyo ya orodha hii',
+    'it has a person or a payment that does not belong to this list',
+  ],
+  imp_name: ['lina jina lisilokubalika', 'it has a name that cannot be accepted'],
+  imp_phone: ['lina namba ya simu isiyokubalika', 'it has a phone number that cannot be accepted'],
+  imp_amount: ['lina kiasi kisichokubalika', 'it has an amount that cannot be accepted'],
+  imp_kind: ['lina aina ya malipo isiyojulikana', 'it has an unknown kind of payment'],
+  imp_date: ['lina tarehe isiyokubalika', 'it has a date that cannot be accepted'],
+  previewTitle: ['Nakala hii ina:', 'This copy holds:'],
+  people: ['Watu', 'People'],
+  exportedOn: ['Ilihifadhiwa', 'Saved on'],
+  openIt: ['Fungua orodha hii', 'Open this list'],
+  imported: ['Orodha imefunguliwa.', 'The list was opened.'],
+  clash: ['Orodha hii tayari ipo kwenye simu hii.', 'This list is already on this phone.'],
+  asNew: ['Weka kama nakala mpya', 'Add it as a new copy'],
+  replaceIt: ['Badilisha iliyopo', 'Replace the one here'],
+  onPhone: ['Kwenye simu', 'On the phone'],
+  inFile: ['Kwenye faili', 'In the file'],
+  lastChange: ['Badiliko la mwisho', 'Last change'],
+  phoneNewer: [
+    'Angalia: orodha iliyo kwenye simu ni mpya kuliko faili. Ukibadilisha, yaliyoandikwa baada ya faili yatatoka kwenye orodha hii.',
+    'Careful: the list on the phone is newer than the file. If you replace it, what was written after the file leaves this list.',
+  ],
+  replace1: [
+    'Orodha iliyopo itahifadhiwa kwanza kwa jina "{name}", kisha faili litachukua nafasi yake.',
+    'The list here is first kept under the name "{name}", then the file takes its place.',
+  ],
+  replaceGoOn: ['Endelea kubadilisha', 'Go on and replace'],
+  replace2: [
+    'Una uhakika? Faili litachukua nafasi ya orodha iliyopo.',
+    'Are you sure? The file will take the place of the list here.',
+  ],
+  replaceYes: ['Ndiyo, badilisha', 'Yes, replace it'],
+  replaceNo: ['Hapana, iache', 'No, leave it'],
+  keptSuffix: ['(kabla ya kubadilisha)', '(before replacing)'],
+  copySuffix: ['(nakala)', '(copy)'],
+  updateReady: ['Toleo jipya lipo', 'A new version is here'],
+  reopen: ['Fungua upya', 'Reopen'],
+  iosInstall: [
+    'Kwenye iPhone: kabla ya kuanza orodha, gusa kitufe cha Share, kisha "Add to Home Screen". Bila hivyo iPhone hufuta orodha baada ya siku 7 bila kufunguliwa.',
+    'On iPhone: before you start a list, tap the Share button, then "Add to Home Screen". Otherwise the iPhone deletes the list after 7 days without a visit.',
+  ],
+  install: ['Weka Mchango kwenye skrini ya simu', 'Put Mchango on the phone screen'],
 };
 
 export const BANNED_WORDS = ['tovuti', 'PWA', 'stock', 'app', 'link', 'system', 'website', 'login', 'Shiriki'];
@@ -215,7 +306,7 @@ const note = (text, kind = 'info') =>
 
 // ---------- state and routing ----------
 
-const state = { storageOk: true, persistRefused: false, blocked: false, flash: null };
+const state = { storageOk: true, persistRefused: false, blocked: false, flash: null, update: null, updating: false, install: null };
 const go = (hash) => {
   if (location.hash === hash) render();
   else location.hash = hash;
@@ -234,6 +325,7 @@ async function render() {
   try {
     if (!state.storageOk || parts.length === 0) view = await homeView();
     else if (parts[0] === 'new') view = newEventView();
+    else if (parts[0] === 'open') view = openView();
     else if (parts[0] === 'e' && parts[1]) {
       const data = await store.loadEvent(parts[1]);
       if (!data) view = missingView();
@@ -241,6 +333,7 @@ async function render() {
       else if (parts[2] === 'pay') view = payView(data, params.get('p'));
       else if (parts[2] === 'edit') view = editEventView(data);
       else if (parts[2] === 'share') view = shareView(data);
+      else if (parts[2] === 'backup') view = backupView(data);
       else if (parts[2] === 'p' && parts[3]) view = personView(data, parts[3]);
       else view = eventView(data);
     } else view = await homeView();
@@ -252,6 +345,7 @@ async function render() {
   if (run !== renderRun) return;
   const root = document.getElementById('app');
   const banner = [];
+  if (state.update) banner.push(updateBar());
   if (state.blocked) banner.push(note(T('closeTabs'), 'warn'));
   if (state.flash) banner.push(note(state.flash.text, state.flash.kind));
   state.flash = null;
@@ -290,6 +384,7 @@ async function homeView() {
     return page;
   }
   if (state.persistRefused) page.append(note(T('persistRefused'), 'warn'));
+  if (needsHomeScreen()) page.append(note(T('iosInstall'), 'warn'));
   const lists = await store.listEvents();
   if (lists.length === 0) {
     page.append(
@@ -321,6 +416,19 @@ async function homeView() {
         ),
       ),
       h('a', { class: 'btn primary block', href: '#/new' }, T('startNew')),
+    );
+  }
+  page.append(h('a', { class: 'btn block', href: '#/open' }, T('openBackup')));
+  if (state.install) {
+    page.append(
+      button(T('install'), {
+        class: 'btn block',
+        onclick: () => {
+          state.install.prompt();
+          state.install = null;
+          render();
+        },
+      }),
     );
   }
   page.append(h('p', { class: 'hint foot' }, T('noMoney')), h('p', { class: 'hint foot' }, T('helpLoss')));
@@ -455,6 +563,17 @@ function eventView({ event, people, payments }) {
     }).observe(totals);
   }
 
+  const due = backupDue(event, Date.now());
+  const last = event.lastBackupAt ? when(event.lastBackupAt) : '';
+  const copyLine = h(
+    'div',
+    { class: 'copy-line' },
+    due
+      ? note(T('due_' + due, { n: event.changesSinceBackup, when: last }), 'warn')
+      : h('p', { class: 'hint' }, last ? T('lastBackup', { when: last }) : T('neverBackedUp')),
+    h('a', { class: 'btn quiet', href: base + '/backup' }, T('backup')),
+  );
+
   const actions = h(
     'nav',
     { class: 'actions' },
@@ -513,7 +632,7 @@ function eventView({ event, people, payments }) {
     { class: 'page event' },
     topBar(event.name, '#/', h('a', { class: 'btn pill', href: base + '/edit' }, T('more'))),
     slim,
-    h('div', { class: 'layout' }, h('aside', { class: 'col-side' }, totals, actions), peopleCol),
+    h('div', { class: 'layout' }, h('aside', { class: 'col-side' }, totals, copyLine, actions), peopleCol),
   );
 }
 
@@ -858,6 +977,236 @@ function shareView(data) {
   );
 }
 
+// ---------- screen 6: save a copy, open a copy ----------
+
+function backupView(data) {
+  const { event } = data;
+  const here = `#/e/${event.id}/backup`;
+  const make = () => {
+    const now = Date.now();
+    return new File([JSON.stringify(buildBackup(data, now))], backupFileName(event, now), { type: 'text/plain' });
+  };
+  const saved = async () => {
+    await store.markBackedUp(event.id, Date.now());
+    flash(T('backupDone'));
+    go(here);
+  };
+  let canSend = false;
+  try {
+    canSend = typeof navigator.share === 'function' && navigator.canShare({ files: [make()] });
+  } catch {}
+  const send = button(T('backupSend'), {
+    class: 'btn primary block',
+    onclick: async () => {
+      try {
+        await navigator.share({ files: [make()] });
+      } catch {
+        return; // cancelled: nothing was saved, so nothing is marked
+      }
+      await saved();
+    },
+  });
+  const download = button(T('backupDownload'), {
+    class: canSend ? 'btn block' : 'btn primary block',
+    onclick: async () => {
+      const file = make();
+      const url = URL.createObjectURL(file);
+      const a = h('a', { href: url, download: file.name, hidden: true });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      await saved();
+    },
+  });
+  return h(
+    'main',
+    { class: 'page' },
+    topBar(T('backup'), '#/e/' + event.id),
+    h('p', { class: 'lead' }, T('backupWhy')),
+    h('p', { class: 'fact' }, event.lastBackupAt ? T('lastBackup', { when: when(event.lastBackupAt) }) : T('neverBackedUp')),
+    note(T('backupPrivacy'), 'warn'),
+    canSend && send,
+    canSend && h('p', { class: 'hint' }, T('backupSendHint')),
+    download,
+    h('a', { class: 'btn block quiet', href: '#/open' }, T('openBackup')),
+  );
+}
+
+function openView() {
+  // The browser's own file button speaks the phone's language, not the page's:
+  // it is kept out of sight and our own button opens it.
+  const input = h('input', { type: 'file', id: 'copy-file', accept: '.txt,text/plain', hidden: true });
+  const pick = h(
+    'label',
+    {
+      class: 'btn primary block',
+      for: 'copy-file',
+      role: 'button',
+      tabindex: '0',
+      onkeydown: (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        input.click();
+      },
+    },
+    T('openLabel'),
+  );
+  const out = h('div', { class: 'form' });
+  input.addEventListener('change', async () => {
+    out.replaceChildren();
+    const file = input.files[0];
+    if (!file) return;
+    out.append(h('p', { class: 'hint picked' }, file.name));
+    let got = { ok: false, reason: 'big' };
+    if (file.size < MAX_FILE_BYTES) {
+      try {
+        got = checkBackup(await file.text());
+      } catch {
+        got = { ok: false, reason: 'parse' };
+      }
+    }
+    if (!got.ok) return out.append(note(T('importRefused', { why: T('imp_' + got.reason) }), 'err'));
+    out.append(...(await previewOf(got.data)));
+  });
+  return h('main', { class: 'page' }, topBar(T('openBackup'), '#/'), pick, input, h('p', { class: 'hint' }, T('openHint')), out);
+}
+
+/** What the file holds, shown BEFORE anything is put on the phone. */
+async function previewOf(data) {
+  const lastOf = (event, fallback) => event.lastChangeAt ?? fallback;
+  const alive = (people) => people.filter((p) => !p.removed).length;
+  const sums = store.summarise(data.people, data.payments);
+  const mine = await store.loadEvent(data.event.id);
+  const opened = (id) => {
+    flash(T('imported'));
+    go('#/e/' + id);
+  };
+  const facts = h(
+    'section',
+    { class: 'totals', 'aria-label': T('previewTitle') },
+    figure(T('people'), alive(data.people)),
+    figure(T('exportedOn'), when(data.exportedAt)),
+    figure(T('pledged'), tzs(sums.pledged)),
+    figure(T('paidIn'), tzs(sums.paid)),
+  );
+  const head = [h('h2', null, T('previewTitle')), h('p', { class: 'lead name' }, data.event.name), facts];
+  if (!mine) {
+    return [
+      ...head,
+      button(T('openIt'), {
+        class: 'btn primary block',
+        onclick: async (e) => {
+          e.currentTarget.disabled = true;
+          opened(await store.importList(data, 'new'));
+        },
+      }),
+    ];
+  }
+
+  // The list is already here: show both, side by side. Nothing is ever merged.
+  const here = store.summarise(mine.people, mine.payments);
+  const phoneLast = lastOf(mine.event, mine.event.createdAt);
+  const fileLast = lastOf(data.event, data.exportedAt);
+  const line = (label, a, b) => h('tr', null, h('th', { scope: 'row' }, label), h('td', { class: 'num' }, a), h('td', { class: 'num' }, b));
+  const versus = h(
+    'table',
+    { class: 'versus' },
+    h('thead', null, h('tr', null, h('td', null), h('th', { scope: 'col' }, T('onPhone')), h('th', { scope: 'col' }, T('inFile')))),
+    h(
+      'tbody',
+      null,
+      line(T('people'), alive(mine.people), alive(data.people)),
+      line(T('paidIn'), fmt(here.paid), fmt(sums.paid)),
+      line(T('lastChange'), when(phoneLast), when(fileLast)),
+    ),
+  );
+  const keepAs = nameWith(mine.event.name, T('keptSuffix'));
+  const zone = h('div', { class: 'danger' });
+  const step0 = () => zone.replaceChildren(button(T('replaceIt'), { class: 'btn danger-btn block', onclick: step1 }));
+  const step1 = () =>
+    zone.replaceChildren(
+      note(T('replace1', { name: keepAs }), 'warn'),
+      button(T('replaceGoOn'), { class: 'btn danger-btn block', onclick: step2 }),
+      button(T('replaceNo'), { class: 'btn block', onclick: step0 }),
+    );
+  const step2 = () =>
+    zone.replaceChildren(
+      note(T('replace2'), 'err'),
+      button(T('replaceYes'), {
+        class: 'btn danger-btn block',
+        onclick: async (e) => {
+          e.currentTarget.disabled = true;
+          opened(await store.importList(data, 'replace', { keepAs }));
+        },
+      }),
+      button(T('replaceNo'), { class: 'btn block', onclick: step0 }),
+    );
+  step0();
+  return [
+    ...head,
+    note(T('clash'), 'warn'),
+    versus,
+    phoneLast > fileLast && note(T('phoneNewer'), 'err'),
+    button(T('asNew'), {
+      class: 'btn primary block',
+      onclick: async (e) => {
+        e.currentTarget.disabled = true;
+        opened(await store.importList(data, 'copy', { rename: nameWith(data.event.name, T('copySuffix')) }));
+      },
+    }),
+    zone,
+  ].filter(Boolean);
+}
+
+// ---------- working with no network, new versions, the phone's home screen ----------
+
+/** iPhone clears a page's saved data after 7 days unless the page is on the Home Screen. */
+function needsHomeScreen() {
+  const onHomeScreen = navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) && !onHomeScreen;
+}
+
+function updateBar() {
+  return h(
+    'div',
+    { class: 'note warn update', role: 'status' },
+    h('span', null, T('updateReady')),
+    button(T('reopen'), {
+      onclick: (e) => {
+        e.currentTarget.disabled = true;
+        state.updating = true;
+        const waiting = state.update?.waiting;
+        if (waiting) waiting.postMessage('skip');
+        else location.reload();
+      },
+    }),
+  );
+}
+
+/** Keep the files on the phone (sw.js), and say so when a newer version has arrived. */
+async function watchVersion() {
+  const sw = navigator.serviceWorker;
+  if (!sw) return;
+  try {
+    const reg = await sw.register('sw.js');
+    const check = () => {
+      if (!reg.waiting || !sw.controller || state.update) return;
+      state.update = reg;
+      // Added on top of the screen as it is: a form being filled is left alone.
+      document.getElementById('app').prepend(updateBar());
+    };
+    check();
+    reg.addEventListener('updatefound', () => reg.installing?.addEventListener('statechange', check));
+    sw.addEventListener('controllerchange', () => {
+      if (state.updating) location.reload();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) reg.update().catch(() => {});
+    });
+  } catch {}
+}
+
 // ---------- start ----------
 
 async function boot() {
@@ -882,7 +1231,13 @@ async function boot() {
     } catch {}
   }
   window.addEventListener('hashchange', render);
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    state.install = e;
+    if (document.querySelector('.page.home')) render();
+  });
   await render();
+  watchVersion();
 }
 
 if (typeof document !== 'undefined') boot();

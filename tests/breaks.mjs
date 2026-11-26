@@ -68,6 +68,27 @@ export const BREAKS = [
     test: 'tests/time.test.mjs',
     tz: 'America/Los_Angeles',
   },
+  {
+    name: "a file with a payment that belongs to nobody is opened",
+    file: 'backup.js',
+    find: "if (!known.has(y.personId)) return no('ref'); // a payment that belongs to nobody in the file",
+    replace: '',
+    test: 'tests/backup.test.mjs',
+  },
+  {
+    name: "a file with a person of some other list is opened",
+    file: 'backup.js',
+    find: "if (p.eventId !== e.id) return no('ref'); // a person of some other list",
+    replace: '',
+    test: 'tests/backup.test.mjs',
+  },
+  {
+    name: "a script is loaded without the version in its address",
+    file: 'share.js',
+    find: "from './store.js?v=0.1.0'",
+    replace: "from './store.js'",
+    test: 'tests/version.test.mjs',
+  },
 ];
 
 function runTest(dir, test, tz) {

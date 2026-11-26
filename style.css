@@ -116,6 +116,13 @@ legend { font-weight: 700; padding: 0; margin-bottom: 4px; }
 .bubble { background: #fff; border: 1px solid var(--line); border-radius: var(--r); padding: 12px 8px; font-size: 14px; line-height: 1.45; }
 .bubble-line { overflow-wrap: anywhere; }
 .pair { display: flex; gap: 8px; }
+.copy-line { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.update { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.lead.name { font-weight: 700; overflow-wrap: anywhere; }
+.picked { overflow-wrap: anywhere; }
+.versus { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--line); border-radius: var(--r); }
+.versus th, .versus td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--line); font-size: 17px; overflow-wrap: anywhere; }
+.versus th { font-size: 16px; }
 .pair .btn { flex: 1; }
 
 @media (min-width: 900px) {

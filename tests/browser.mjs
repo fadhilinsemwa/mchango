@@ -6,12 +6,14 @@
 // Set SHOTS=<folder> to keep screenshots. Set CHROME=<path> if Chrome is elsewhere.
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { serve } from './serve.mjs';
+import { checkBackup } from '../backup.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SHOTS = process.env.SHOTS ?? null;
@@ -105,7 +107,7 @@ async function openTab(browser, width) {
     if (msg.method === 'Runtime.exceptionThrown') {
       errors.push(msg.params.exceptionDetails.exception?.description ?? msg.params.exceptionDetails.text);
     }
-    if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') errors.push(msg.params.entry.text);
+    if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') errors.push(`${msg.params.entry.text} ${msg.params.entry.url ?? ''}`.trim());
   });
   for (const domain of ['Page', 'Runtime', 'Network', 'Log']) await cdp(domain + '.enable');
   await cdp('Emulation.setDeviceMetricsOverride', {
@@ -128,7 +130,7 @@ async function openTab(browser, width) {
   };
   const q = (sel) => `document.querySelector(${JSON.stringify(sel)})`;
   const tab = {
-    cdp, js, until, requests, failures, errors, width,
+    cdp, js, until, requests, failures, errors, width, browserContextId,
     goto: async (url) => {
       await cdp('Page.navigate', { url });
       await until(`document.readyState === 'complete' && ${q('#app main')}`, 'page loaded: ' + url);
@@ -136,7 +138,7 @@ async function openTab(browser, width) {
     /** Tap the first link or button whose text is exactly `text`. */
     tap: async (text) => {
       const found = await js(`(() => {
-        const el = [...document.querySelectorAll('a, button, summary')].find((e) => !e.closest('[hidden]') && e.textContent.trim() === ${JSON.stringify(text)});
+        const el = [...document.querySelectorAll('a, button, summary, label.btn')].find((e) => !e.closest('[hidden]') && e.textContent.trim() === ${JSON.stringify(text)});
         if (!el) return false;
         el.click();
         return true;
@@ -191,7 +193,7 @@ async function checkScreen(tab, name) {
       if (ratio < need) out.faint.push(el.textContent.trim().slice(0, 30) + " " + ratio.toFixed(2));
     }
     const seen = (el) => el.getClientRects().length > 0 && !el.closest('[hidden]');
-    for (const el of document.querySelectorAll('a, button, summary, input, select, textarea, label.choice')) {
+    for (const el of document.querySelectorAll('a, button, summary, input, select, textarea, label.choice, label.btn')) {
       if (!seen(el) || el.type === 'radio' || el.type === 'checkbox') continue; // their label is the target
       const r = el.getBoundingClientRect();
       const need = el.classList.contains('primary') ? 52 : 48;
@@ -228,7 +230,8 @@ async function wholeEvent(browser, base, width) {
   assert.match(first, /Orodha inakaa kwenye simu yako tu/);
   await checkScreen(tab, '1-first-visit');
 
-  // From here on the network is OFF: the list must not need it.
+  // The first visit puts the page's files on the phone. From here on the network is OFF.
+  await tab.until('navigator.serviceWorker.controller', 'the files are kept on the phone');
   await tab.cdp('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
 
   step('start a list');
@@ -488,6 +491,309 @@ async function shareScreen(browser, base) {
   await tab.close();
 }
 
+// ---------- save a copy, open a copy ----------
+
+/** Hand a file to the "choose a file" field, as the phone's file picker would. */
+const chooseFile = (tab, text, name = 'mchango-nakala.txt') =>
+  tab.js(`(() => {
+    const input = document.querySelector('input[type=file]');
+    const files = new DataTransfer();
+    files.items.add(new File([${JSON.stringify(text)}], ${JSON.stringify(name)}, { type: 'text/plain' }));
+    input.files = files.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+const homeCards = (tab) => tab.js(`[...document.querySelectorAll('.card')].map((c) => c.children[0].textContent + ' | ' + c.children[1].textContent)`);
+
+async function copyScreens(browser, base) {
+  const tab = await openTab(browser, 390);
+  const step = (text) => console.log(`  ${text}`);
+  const downloads = mkdtempSync(join(tmpdir(), 'mchango-downloads-'));
+  await browser.send('Browser.setDownloadBehavior', { behavior: 'allow', browserContextId: tab.browserContextId, downloadPath: downloads });
+  await tab.goto(base);
+  await tab.tap('Anza mchango mpya');
+  await tab.until("document.querySelector('form')");
+  await tab.type('Jina la mchango', 'Harusi ya Zawadi na Tumaini');
+  await tab.tap('Hifadhi');
+  await tab.until("document.querySelector('.page.event')");
+  const eventHash = await tab.js('location.hash');
+
+  step('an empty list has nothing to lose: no reminder yet');
+  assert.match(await tab.text(), /Orodha hii bado haina nakala\./);
+  assert.equal(await tab.js("document.querySelector('.copy-line .note')"), null);
+
+  await tab.tap('Ongeza mtu');
+  await tab.until("document.querySelector('.quick')");
+  await tab.js("document.querySelector('.quick').open = true");
+  await tab.type('Mstari mmoja kwa kila mtu: jina, kisha ahadi', `Furaha Amani 100,000\nUpendo Faraja 50,000\n${XSS_NAME} 1000`);
+  await tab.tap('Ongeza wote');
+  await tab.until("document.querySelector('.note.ok')");
+  await tab.hash(eventHash + '/pay');
+  await tab.until("document.querySelector('#who')");
+  await tab.type('Kiasi, TZS', '60,000');
+  await tab.js(`(() => { const s = document.querySelector('#who'); s.value = [...s.options].find((o) => o.textContent === 'Furaha Amani').value; s.dispatchEvent(new Event('change')); })()`);
+  await tab.tap('Thibitisha malipo');
+  await tab.until("document.querySelector('.page.event')");
+
+  step('the list changed and was never saved: a reminder, not a blocking box');
+  assert.match(await tab.js("document.querySelector('.copy-line .note.warn').textContent"), /Orodha hii bado haina nakala\. Hifadhi nakala sasa\./);
+  await checkScreen(tab, '17-reminder');
+
+  step('the copy screen says what the file holds; the file can be shared where the browser shares files');
+  await tab.tap('Hifadhi nakala');
+  await tab.until("[...document.querySelectorAll('button')].some((b) => b.textContent === 'Pakua')");
+  assert.match(await tab.text(), /Faili hili lina majina na namba za simu za wachangiaji/);
+  const sharing = await tab.js(`(() => {
+    if (typeof navigator.canShare !== 'function') return 'this browser has no file sharing';
+    return navigator.canShare({ files: [new File(['{}'], 'mchango-harusi-2026-11-26.txt', { type: 'text/plain' })] }) ? 'yes' : 'REFUSED';
+  })()`);
+  console.log(`    can the copy be shared as a file here? ${sharing}`);
+  assert.notEqual(sharing, 'REFUSED', 'the browser shares files but refuses our .txt copy');
+  await checkScreen(tab, '18-save-a-copy');
+
+  step('Pakua writes the file; the reminder starts again');
+  await tab.tap('Pakua');
+  await tab.until("document.querySelector('.note.ok')");
+  assert.match(await tab.text(), /Nakala imehifadhiwa\./);
+  assert.match(await tab.text(), /Nakala ya mwisho: \d+\/\d+\/\d+ \d\d:\d\d/);
+  let name;
+  for (let i = 0; i < 100 && !name; i++) {
+    name = readdirSync(downloads).find((n) => n.endsWith('.txt'));
+    if (!name) await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.match(name ?? 'no file was written', /^mchango-harusi-ya-zawadi-na-tumaini-\d{4}-\d\d-\d\d\.txt$/);
+  const copy = readFileSync(join(downloads, name), 'utf8');
+  const checked = checkBackup(copy);
+  assert.equal(checked.ok, true, 'the file we wrote does not pass our own check');
+  assert.deepEqual(checked.data.people.map((p) => [p.name, p.pledge]).sort((a, b) => b[1] - a[1]), [['Furaha Amani', 100000], ['Upendo Faraja', 50000], [XSS_NAME, 1000]]);
+  assert.deepEqual(checked.data.payments.map((y) => [y.amount, y.method]), [[60000, 'cash']]);
+
+  step('"Tuma nakala WhatsApp" hands over one .txt file, and only after the tap');
+  await tab.js("navigator.canShare = () => true; navigator.share = async (data) => { window.__sent = data.files.map((f) => [f.name, f.type, f.size > 100]); }");
+  await tab.hash(eventHash);
+  await tab.until("document.querySelector('.page.event')");
+  await tab.tap('Hifadhi nakala');
+  await tab.until("[...document.querySelectorAll('button')].some((b) => b.textContent === 'Tuma nakala WhatsApp')");
+  assert.equal(await tab.js('window.__sent'), undefined);
+  await checkScreen(tab, '19-send-a-copy');
+  await tab.tap('Tuma nakala WhatsApp');
+  await tab.until('window.__sent');
+  assert.deepEqual(await tab.js('window.__sent'), [[name, 'text/plain', true]]);
+
+  step('a change after the copy; then a spoiled file is refused and nothing changes');
+  await new Promise((r) => setTimeout(r, 1100)); // times are kept to the second
+  await tab.hash(eventHash + '/pay');
+  await tab.until("document.querySelector('#who')");
+  await tab.type('Kiasi, TZS', '5,000');
+  await tab.js(`(() => { const s = document.querySelector('#who'); s.value = [...s.options].find((o) => o.textContent === 'Upendo Faraja').value; s.dispatchEvent(new Event('change')); })()`);
+  await tab.tap('Thibitisha malipo');
+  await tab.until("document.querySelector('.page.event')");
+  await tab.hash('#/');
+  await tab.until("document.querySelector('.page.home')");
+  const before = await homeCards(tab);
+  assert.deepEqual(before, ['Harusi ya Zawadi na Tumaini | Zimelipwa 65,000 / Ahadi 151,000']);
+  await tab.tap('Fungua nakala');
+  await tab.until("document.querySelector('input[type=file]')");
+  await checkScreen(tab, '20-open-a-copy');
+  assert.equal(await tab.js("document.querySelector('label[for=copy-file]').textContent"), 'Chagua faili la nakala');
+  assert.equal(await tab.js("document.querySelector('input[type=file]').accept"), '.txt,text/plain');
+  const orphan = JSON.parse(copy);
+  orphan.payments[0].personId = 'nobody';
+  for (const [text, why] of [
+    [JSON.stringify(orphan), 'lina mtu au malipo yasiyo ya orodha hii'],
+    [copy.slice(0, 300), 'si nakala ya Mchango, au limeharibika'],
+    [copy.replace('"schema":1', '"schema":2'), 'limetoka kwenye toleo jipya zaidi la Mchango'],
+    [copy.replace('"amount":60000', '"amount":0'), 'lina kiasi kisichokubalika'],
+  ]) {
+    await chooseFile(tab, text);
+    await tab.until("document.querySelector('.note.err')");
+    assert.match(await tab.text(), new RegExp('Faili halikufunguliwa na hakuna kilichobadilika: ' + why));
+    await tab.js("document.querySelector('.note.err').remove()");
+  }
+  await checkScreen(tab, '21-file-refused');
+
+  step('the good file: a preview first, the phone and the file side by side, the newer phone copy said in words');
+  await chooseFile(tab, copy, name);
+  await tab.until("document.querySelector('.versus')");
+  const preview = await tab.text();
+  assert.match(preview, /Nakala hii ina:/);
+  assert.match(preview, /Orodha hii tayari ipo kwenye simu hii\./);
+  assert.match(preview, /Angalia: orodha iliyo kwenye simu ni mpya kuliko faili/);
+  assert.deepEqual(await totals(tab), { Watu: '3', Ilihifadhiwa: await tab.js("document.querySelectorAll('.totals .fig-value')[1].textContent"), Ahadi: 'TZS 151,000', Zimelipwa: 'TZS 60,000' });
+  const versus = await tab.js("[...document.querySelectorAll('.versus tbody tr')].map((r) => [...r.children].map((c) => c.textContent))");
+  assert.deepEqual(versus.slice(0, 2), [['Watu', '3', '3'], ['Zimelipwa', '65,000', '60,000']]);
+  assert.equal(await tab.js("document.querySelector('main img')"), null, 'a name in the file became an <img> element');
+  assert.equal(await tab.js('window.__xss'), undefined);
+  assert.deepEqual(await (async () => { await tab.hash('#/'); await tab.until("document.querySelector('.page.home')"); return homeCards(tab); })(), before, 'a preview changed the phone');
+
+  step('"Weka kama nakala mpya" adds it beside the list that is here');
+  await tab.tap('Fungua nakala');
+  await tab.until("document.querySelector('input[type=file]')");
+  await chooseFile(tab, copy, name);
+  await tab.until("document.querySelector('.versus')");
+  await checkScreen(tab, '22-already-here');
+  await tab.tap('Weka kama nakala mpya');
+  await tab.until("document.querySelector('.page.event')");
+  assert.match(await tab.text(), /Orodha imefunguliwa\./);
+  assert.equal((await totals(tab)).Zimelipwa, 'TZS 60,000');
+  assert.equal(await tab.js("document.querySelector('main img')"), null);
+  await tab.hash('#/');
+  await tab.until("document.querySelector('.page.home')");
+  assert.deepEqual((await homeCards(tab)).sort(), [
+    'Harusi ya Zawadi na Tumaini (nakala) | Zimelipwa 60,000 / Ahadi 151,000',
+    'Harusi ya Zawadi na Tumaini | Zimelipwa 65,000 / Ahadi 151,000',
+  ]);
+
+  step('"Badilisha iliyopo" asks twice and first keeps the list that is here');
+  await tab.tap('Fungua nakala');
+  await tab.until("document.querySelector('input[type=file]')");
+  await chooseFile(tab, copy, name);
+  await tab.until("document.querySelector('.versus')");
+  await tab.tap('Badilisha iliyopo');
+  assert.match(await tab.text(), /Orodha iliyopo itahifadhiwa kwanza kwa jina "Harusi ya Zawadi na Tumaini \(kabla ya kubadilisha\)"/);
+  await tab.tap('Endelea kubadilisha');
+  assert.match(await tab.text(), /Una uhakika\? Faili litachukua nafasi ya orodha iliyopo\./);
+  await checkScreen(tab, '23-replace-twice');
+  await tab.tap('Ndiyo, badilisha');
+  await tab.until("document.querySelector('.page.event')");
+  assert.equal(await tab.js('location.hash'), eventHash, 'the replaced list kept its place');
+  assert.equal((await totals(tab)).Zimelipwa, 'TZS 60,000');
+  assert.match(await tab.text(), /Nakala ya mwisho/);
+  await tab.hash('#/');
+  await tab.until("document.querySelector('.page.home')");
+  assert.deepEqual((await homeCards(tab)).sort(), [
+    'Harusi ya Zawadi na Tumaini (kabla ya kubadilisha) | Zimelipwa 65,000 / Ahadi 151,000',
+    'Harusi ya Zawadi na Tumaini (nakala) | Zimelipwa 60,000 / Ahadi 151,000',
+    'Harusi ya Zawadi na Tumaini | Zimelipwa 60,000 / Ahadi 151,000',
+  ]);
+
+  step('a new phone: the file opens as the list it was');
+  const phone2 = await openTab(browser, 390);
+  await phone2.goto(base);
+  await phone2.tap('Fungua nakala');
+  await phone2.until("document.querySelector('input[type=file]')");
+  await chooseFile(phone2, copy, name);
+  await phone2.until("[...document.querySelectorAll('button')].some((b) => b.textContent === 'Fungua orodha hii')");
+  assert.equal(await phone2.js("document.querySelector('.versus')"), null);
+  await checkScreen(phone2, '24-new-phone-preview');
+  await phone2.tap('Fungua orodha hii');
+  await phone2.until("document.querySelector('.page.event')");
+  assert.deepEqual(await totals(phone2), { Ahadi: 'TZS 151,000', Zimelipwa: 'TZS 60,000', Bado: 'TZS 91,000' });
+  assert.equal(await phone2.js('location.hash'), eventHash);
+  assert.equal(await phone2.js(`[...document.querySelectorAll('.row-name')].some((e) => e.textContent === ${JSON.stringify(XSS_NAME)})`), true);
+  assert.equal(await phone2.js('window.__xss'), undefined);
+
+  for (const t of [tab, phone2]) {
+    assert.deepEqual(t.errors, []);
+    assert.deepEqual(t.failures, []);
+    for (const r of t.requests) {
+      assert.equal(new URL(r.url).origin, new URL(base).origin, 'a request left our own address: ' + r.url);
+      assert.equal(r.method === 'GET' && !r.hasPostData, true, 'a request carried something: ' + r.url);
+    }
+    await t.close();
+  }
+  rmSync(downloads, { recursive: true, force: true });
+}
+
+// ---------- no network at all, and a new version ----------
+
+/** A copy of the project as the next version, with one visible change in the SMS reader. */
+function nextVersion(dir) {
+  cpSync(ROOT, dir, { recursive: true, filter: (src) => !/\/(\.git|node_modules|tests)(\/|$)/.test(src) });
+  for (const name of readdirSync(dir).filter((n) => /\.(js|html|css|webmanifest)$/.test(n))) {
+    let text = readFileSync(join(dir, name), 'utf8').replaceAll('0.1.0', '0.1.1');
+    if (name === 'parse.js') {
+      const old = "if (OUTGOING.test(t)) return refuse('outgoing');";
+      assert.equal(text.includes(old), true);
+      text = text.replace(old, "if (OUTGOING.test(t)) return refuse('loan');");
+    }
+    writeFileSync(join(dir, name), text);
+  }
+}
+
+async function offlineAndUpdate(browser) {
+  const step = (text) => console.log(`  ${text}`);
+  const v2 = mkdtempSync(join(tmpdir(), 'mchango-v2-'));
+  nextVersion(v2);
+  const shop = await serve({ root: ROOT });
+  const tab = await openTab(browser, 390);
+  const outgoing = async () => {
+    await tab.hash(eventHash + '/pay');
+    await tab.until("document.querySelector('#who')");
+    await tab.type('Bandika SMS ya malipo hapa', smsText('till_out_to_lipa'));
+    await tab.tap('Soma SMS');
+    return tab.js("document.querySelector('.note.err').textContent");
+  };
+  await tab.goto(shop.url);
+  await tab.until('navigator.serviceWorker.controller', 'the files are kept on the phone');
+  await tab.tap('Anza mchango mpya');
+  await tab.until("document.querySelector('form')");
+  await tab.type('Jina la mchango', 'Msiba wa Faraja');
+  await tab.tap('Hifadhi');
+  await tab.until("document.querySelector('.page.event')");
+  const eventHash = await tab.js('location.hash');
+  assert.equal(await tab.js('document.documentElement.dataset.version'), '0.1.0');
+  assert.match(await outgoing(), /pesa iliyotoka/);
+
+  step('version 2 is published: the page says so and waits for the tap, a form being filled is left alone');
+  shop.setRoot(v2);
+  await tab.type('Kiasi, TZS', '7,000');
+  await tab.js('navigator.serviceWorker.getRegistration().then((r) => r.update()).then(() => 1)');
+  await tab.until("document.querySelector('.update')", 'the new-version notice');
+  assert.match(await tab.js("document.querySelector('.update').textContent"), /Toleo jipya lipo/);
+  assert.equal(await tab.js('document.documentElement.dataset.version'), '0.1.0');
+  assert.equal(await tab.js("document.querySelector('#who') !== null && [...document.querySelectorAll('input')].some((i) => i.value === '7,000')"), true, 'the notice wiped the form');
+  await checkScreen(tab, '25-new-version');
+
+  step('"Fungua upya": the new SMS reader runs, the list is still there, the old files are gone');
+  await tab.tap('Fungua upya');
+  await tab.until("document.documentElement.dataset.version === '0.1.1' && document.querySelector('#app main')", 'the page reopened as version 2');
+  assert.match(await outgoing(), /kulipa deni/);
+  assert.equal(await tab.js("document.querySelector('.update')"), null);
+  const kept = await tab.js('caches.keys()');
+  assert.equal(kept.length === 1 && kept[0].endsWith(' 0.1.1'), true, 'files kept: ' + kept.join(' | '));
+
+  step('the server is switched off altogether: the page still opens, and still saves');
+  shop.server.closeAllConnections();
+  await new Promise((r) => shop.server.close(r));
+  await tab.goto(shop.url + eventHash);
+  await tab.until("document.querySelector('.page.event')");
+  assert.match(await tab.text(), /Msiba wa Faraja/);
+  assert.equal(await tab.js('document.documentElement.dataset.version'), '0.1.1');
+  await tab.tap('Ongeza mtu');
+  await tab.until("document.querySelector('.quick')");
+  await tab.type('Jina', 'Tumaini Amani');
+  await tab.type('Ahadi, TZS', '20,000');
+  await tab.tap('Hifadhi');
+  await tab.until("document.querySelector('.people')");
+  await tab.goto(shop.url); // the home page too, with no server
+  assert.deepEqual(await homeCards(tab), ['Msiba wa Faraja | Zimelipwa 0 / Ahadi 20,000']);
+  assert.deepEqual(tab.errors, []);
+  await tab.close();
+  rmSync(v2, { recursive: true, force: true });
+}
+
+async function homeScreenHints(browser, base) {
+  const tab = await openTab(browser, 390);
+  await tab.goto(base);
+  assert.equal(/Add to Home Screen/.test(await tab.text()), false, 'the iPhone note shows on a phone that is not an iPhone');
+  assert.equal(/Weka Mchango kwenye skrini ya simu/.test(await tab.text()), false);
+  await tab.js("(() => { const e = new Event('beforeinstallprompt', { cancelable: true }); e.prompt = () => { window.__asked = true; }; window.dispatchEvent(e); })()");
+  await tab.until("[...document.querySelectorAll('button')].some((b) => b.textContent === 'Weka Mchango kwenye skrini ya simu')");
+  await checkScreen(tab, '26-install');
+  await tab.tap('Weka Mchango kwenye skrini ya simu');
+  assert.equal(await tab.js('window.__asked'), true);
+  await tab.close();
+
+  const iphone = await openTab(browser, 390);
+  await iphone.cdp('Emulation.setUserAgentOverride', {
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  });
+  await iphone.goto(base);
+  assert.match(await iphone.text(), /Kwenye iPhone: kabla ya kuanza orodha, gusa kitufe cha Share, kisha "Add to Home Screen"/);
+  await checkScreen(iphone, '27-iphone');
+  await iphone.close();
+}
+
 // ---------- run ----------
 
 const site = await serve({ root: ROOT });
@@ -513,11 +819,28 @@ try {
   console.log('the text for WhatsApp: exact, one line per person at 390 px, never sent by itself');
   await shareScreen(browser, site.url);
 
-  console.log('first load is under 80 KB');
-  const files = ['index.html', 'style.css', 'app.js', 'store.js', 'parse.js', 'share.js'];
-  const bytes = files.reduce((sum, f) => sum + statSync(join(ROOT, f)).size, 0);
-  console.log(`  ${bytes} bytes in ${files.length} files`);
-  assert.equal(bytes < 80000, true, `first load is ${bytes} bytes`);
+  console.log('save a copy, open a copy');
+  await copyScreens(browser, site.url);
+
+  console.log('version 1, then version 2, then no server at all');
+  await offlineAndUpdate(browser);
+
+  console.log('the phone screen: Android offers it, iPhone is told how');
+  await homeScreenHints(browser, site.url);
+
+  console.log('everything the phone keeps is under 80 KB over the wire');
+  // Every file in sw.js's list. Text travels compressed (gzip); pictures travel as they are.
+  const list = /const FILES = \[([^\]]+)\]/.exec(readFileSync(join(ROOT, 'sw.js'), 'utf8'))[1];
+  const files = ['sw.js', ...[...list.matchAll(/'([^']+)'/g)].map((m) => m[1].split('?')[0]).filter((f) => f !== './')];
+  let raw = 0;
+  let wire = 0;
+  for (const f of files) {
+    const body = readFileSync(join(ROOT, f));
+    raw += body.length;
+    wire += f.endsWith('.png') ? body.length : gzipSync(body, { level: 6 }).length;
+  }
+  console.log(`  ${files.length} files: ${raw} bytes on disk, ${wire} bytes over the wire`);
+  assert.equal(wire < 80000, true, `over the wire it is ${wire} bytes`);
 
   console.log('BROWSER TESTS GREEN');
 } catch (err) {
